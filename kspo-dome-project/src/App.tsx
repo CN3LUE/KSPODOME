@@ -1084,7 +1084,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 relative w-full h-full p-1 sm:p-2 flex items-center justify-center min-h-0">
+      <main className="flex-1 relative w-full h-full p-1 sm:p-2 flex items-start sm:items-center justify-center min-h-0 overflow-hidden">
         {step === 1 ? (
           <Step1Create 
             characterName={characterName} setCharacterName={setCharacterName}
@@ -1189,6 +1189,10 @@ function Step1Create({
             <div className="absolute bottom-3 sm:bottom-6 w-12 h-1 bg-gray-400 rounded-[100%] scale-x-150 z-0"></div>
           </div>
           <button onClick={handleTestJump} className="win95-button w-full py-0.5 sm:py-1 text-xs sm:text-sm">모션 테스트 (T)</button>
+          <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-bold text-[#000080] py-1">
+            <input type="checkbox" checked={hasItem} onChange={(e) => setHasItem(e.target.checked)} className="accent-[#000080]" />
+            [아이템] 에바뛰 부채 장착하기
+          </label>
         </div>
 
         <div className="flex flex-col gap-2 sm:gap-4 md:w-1/2 justify-between">
@@ -1226,10 +1230,6 @@ function Step1Create({
               </div>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer text-sm font-bold mt-2 text-[#000080]">
-              <input type="checkbox" checked={hasItem} onChange={(e) => setHasItem(e.target.checked)} className="accent-[#000080]" />
-              [아이템] 에바뛰 부채 장착하기
-            </label>
           </div>
 
           <div className="flex flex-col gap-1 mt-1 sm:mt-4 pt-2 sm:pt-4 border-t border-[var(--win-border-white)]">
@@ -1248,8 +1248,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const rafRef = useRef(null);
   const dragDistanceRef = useRef(0);
   const lastPointerRef = useRef({ x: 0, y: 0 });
+  const activePointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
   
   const [transform, setTransform] = useState({ x: -600, y: -600, scale: 0.85 });
+  const transformRef = useRef(transform);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [searchTerm, setSearchTerm] = useState('');
@@ -1261,6 +1264,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
 
+  useEffect(() => {
+    transformRef.current = transform;
+  }, [transform]);
+
   const filteredChars = useMemo(() => {
     if (!searchTerm) return characters;
     return characters.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -1271,13 +1278,51 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const handlePointerDown = (e) => {
     if (draggingCharId) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointersRef.current.size >= 2) {
+      const [first, second] = Array.from(activePointersRef.current.values()).slice(0, 2);
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = ((first.x + second.x) / 2) - rect.left;
+      const centerY = ((first.y + second.y) / 2) - rect.top;
+      const current = transformRef.current;
+      pinchRef.current = {
+        distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+        scale: current.scale,
+        worldX: (centerX - current.x) / current.scale,
+        worldY: (centerY - current.y) / current.scale
+      };
+      setIsDragging(false);
+      return;
+    }
     setIsDragging(true);
     dragDistanceRef.current = 0;
     lastPointerRef.current = { x: e.clientX, y: e.clientY };
-    setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+    setDragStart({ x: e.clientX - transformRef.current.x, y: e.clientY - transformRef.current.y });
   };
 
   const handlePointerMove = (e) => {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (activePointersRef.current.size >= 2 && pinchRef.current) {
+      const [first, second] = Array.from(activePointersRef.current.values()).slice(0, 2);
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = ((first.x + second.x) / 2) - rect.left;
+      const centerY = ((first.y + second.y) / 2) - rect.top;
+      const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+      const nextScale = Math.min(3, Math.max(0.3, pinchRef.current.scale * (distance / pinchRef.current.distance)));
+      const next = {
+        scale: nextScale,
+        x: centerX - pinchRef.current.worldX * nextScale,
+        y: centerY - pinchRef.current.worldY * nextScale
+      };
+      transformRef.current = next;
+      setTransform(next);
+      dragDistanceRef.current += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
+      return;
+    }
+
     const dx = e.clientX - lastPointerRef.current.x;
     const dy = e.clientY - lastPointerRef.current.y;
     lastPointerRef.current = { x: e.clientX, y: e.clientY };
@@ -1289,8 +1334,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         const blueprintEl = containerRef.current?.querySelector('.bg-grid');
         if (!blueprintEl) return;
         const rect = blueprintEl.getBoundingClientRect();
-        const worldX = (e.clientX - rect.left) / transform.scale;
-        const worldY = (e.clientY - rect.top) / transform.scale;
+        const worldX = (e.clientX - rect.left) / transformRef.current.scale;
+        const worldY = (e.clientY - rect.top) / transformRef.current.scale;
         onUpdatePosition(draggingCharId, Math.max(50, Math.min(WORLD_SIZE - 50, worldX)), Math.max(50, Math.min(WORLD_SIZE - 50, worldY)));
       });
       return;
@@ -1298,13 +1343,26 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (!isDragging) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      setTransform(prev => ({ ...prev, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }));
+      setTransform(prev => {
+        const next = { ...prev, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
+        transformRef.current = next;
+        return next;
+      });
     });
   };
 
   const handlePointerUp = (e) => {
     if (e?.currentTarget?.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    setIsDragging(false);
+    activePointersRef.current.delete(e.pointerId);
+    pinchRef.current = null;
+    if (activePointersRef.current.size === 1) {
+      const remaining = Array.from(activePointersRef.current.values())[0];
+      lastPointerRef.current = remaining;
+      setDragStart({ x: remaining.x - transformRef.current.x, y: remaining.y - transformRef.current.y });
+      setIsDragging(true);
+    } else {
+      setIsDragging(false);
+    }
     setDraggingCharId(null);
   };
 
