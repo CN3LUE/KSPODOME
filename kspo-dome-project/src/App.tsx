@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { collection, deleteDoc, doc, getDocs, getFirestore, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap');
@@ -192,11 +194,63 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
+const firebaseDb = getFirestore(firebaseApp);
+const firebaseStorage = getStorage(firebaseApp);
 const IS_ADMIN_PAGE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1';
 
 const sliceEmojiString = (str, limit) => {
   const chars = [...new Intl.Segmenter().segment(str)].map(x => x.segment);
   return chars.slice(0, limit).join('');
+};
+
+const canvasToBlob = (canvas, type, quality): Promise<Blob> => new Promise((resolve, reject) => {
+  canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('이미지 변환 실패')), type, quality);
+});
+
+// 사용자가 고른 원본을 128px 이하 WebP로 바꾸고 50KB 안쪽으로 자동 압축합니다.
+const compressCharacterImage = async (file) => {
+  if (!file?.type?.startsWith('image/')) throw new Error('이미지 파일만 선택할 수 있습니다.');
+
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('사진을 불러오지 못했습니다.'));
+      img.src = sourceUrl;
+    });
+
+    const targetBytes = 50 * 1024;
+    const sizes = [128, 112, 96, 80, 64];
+    const qualities = [0.92, 0.84, 0.76, 0.68, 0.60, 0.52, 0.44, 0.36];
+    let smallestBlob: Blob | null = null;
+
+    for (const maxSize of sizes) {
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('이미지 압축을 지원하지 않는 브라우저입니다.');
+      context.clearRect(0, 0, width, height);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(image, 0, 0, width, height);
+
+      for (const quality of qualities) {
+        const blob = await canvasToBlob(canvas, 'image/webp', quality);
+        if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
+        if (blob.size <= targetBytes) return blob;
+      }
+    }
+
+    if (smallestBlob?.size <= targetBytes) return smallestBlob;
+    throw new Error('사진을 50KB 이하로 줄이지 못했습니다. 다른 사진을 선택해 주세요.');
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
 };
 
 const getBadgeName = (jumps) => {
@@ -213,21 +267,23 @@ const generatePresets = (count) => {
   
   return Array.from({ length: count }).map((_, i) => ({
     id: 'preset-' + i,
-    name: names[Math.floor(Math.random() * names.length)] + '_' + i.toString().padStart(3, '0'),
-    emoji: emojis[Math.floor(Math.random() * emojis.length)],
+    name: names[i % names.length] + '_' + i.toString().padStart(3, '0'),
+    emoji: emojis[i % emojis.length],
     imageUrl: null,
-    hasItem: Math.random() > 0.5,
-    x: Math.random() * 2800 + 100,
-    y: Math.random() * 2800 + 100,
-    delay: Math.random() * -2, 
-    duration: 1.0 + Math.random() * 0.4,
-    motionType: Math.floor(Math.random() * 2),
-    jumpsCount: Math.floor(Math.random() * 95000) + 1200,
+    hasItem: i % 2 === 0,
+    x: ((i * 137) % 2800) + 100,
+    y: ((i * 271) % 2800) + 100,
+    delay: -((i % 20) / 10),
+    duration: 1.0 + ((i % 5) / 10),
+    motionType: i % 2,
+    jumpsCount: 1200 + ((i * 631) % 95000),
     isUser: false,
-    runBest: Math.floor(Math.random() * 80),
-    roofBest: Math.floor(Math.random() * 400)
+    runBest: (i * 17) % 80,
+    roofBest: (i * 29) % 400
   }));
 };
+
+const PRESET_CHARACTERS = generatePresets(150);
 
 function RetroModal({ isOpen, title, message, onConfirm, onCancel, showCancel = true }) {
   if (!isOpen) return null;
@@ -888,6 +944,8 @@ export default function App() {
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
   const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null, showCancel: false });
+  const positionSaveTimersRef = useRef(new Map());
+  const worldCharactersRef = useRef([]);
 
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
@@ -897,6 +955,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       if (!user) {
+        if (!IS_ADMIN_PAGE) {
+          try {
+            await signInAnonymously(firebaseAuth);
+            return;
+          } catch {
+            setAdminLoginError('Firebase 익명 로그인을 확인해 주세요.');
+          }
+        }
         setIsAdmin(false);
         setAuthReady(true);
         return;
@@ -950,9 +1016,25 @@ export default function App() {
     setAdminPassword('');
   };
 
+  // Firestore의 characters 컬렉션을 모든 접속자와 실시간 공유합니다.
   useEffect(() => {
-    setWorldCharacters(generatePresets(150));
-  }, []);
+    const savedMyCharacterId = window.localStorage.getItem('kspo-my-character-id');
+    if (savedMyCharacterId) setMyCharacterId(savedMyCharacterId);
+
+    const unsubscribe = onSnapshot(collection(firebaseDb, 'characters'), (snapshot) => {
+      const sharedCharacters = snapshot.docs.map(characterDoc => ({
+        ...characterDoc.data(),
+        id: characterDoc.id,
+        isUser: true
+      }));
+      setWorldCharacters([...PRESET_CHARACTERS, ...sharedCharacters]);
+      setCurrentCapacity(INITIAL_FILL + sharedCharacters.length);
+    }, () => {
+      showModal('연결 오류', 'Firestore 읽기 권한과 보안 규칙을 확인해 주세요.', null, false);
+    });
+
+    return unsubscribe;
+  }, [showModal]);
 
   // 1초마다 +1 패시브 점프
   useEffect(() => {
@@ -977,38 +1059,105 @@ export default function App() {
     if (currentCapacity >= MAX_CAPACITY) setIsFull(true);
   }, [currentCapacity]);
 
-  const handleRegister = (newChar) => {
+  useEffect(() => {
+    worldCharactersRef.current = worldCharacters;
+  }, [worldCharacters]);
+
+  // 자동 점프 횟수는 매초 화면에 반영하되 Firestore에는 1분 단위로 묶어 저장합니다.
+  useEffect(() => {
+    if (step !== 2 || !myCharacterId || myCharacterId.startsWith('preset-')) return;
+
+    const persistMyCharacterProgress = () => {
+      const myCharacter = worldCharactersRef.current.find(character => character.id === myCharacterId);
+      if (!myCharacter) return;
+      updateDoc(doc(firebaseDb, 'characters', myCharacterId), {
+        jumpsCount: myCharacter.jumpsCount || 0,
+        restUntil: myCharacter.restUntil || null,
+        updatedAtMs: Date.now()
+      }).catch(() => {});
+    };
+
+    const interval = window.setInterval(persistMyCharacterProgress, 60000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistMyCharacterProgress();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      persistMyCharacterProgress();
+    };
+  }, [step, myCharacterId]);
+
+  const handleRegister = async (newChar) => {
     if (currentCapacity >= MAX_CAPACITY) {
         showModal('접속 불가', '광장 수용 인원이 가득 찼습니다.', null, false);
         return; 
     }
-    const charWithCoords = {
-      ...newChar,
-      x: 1500 + (Math.random() * 120 - 60),
-      y: 1500 + (Math.random() * 120 - 60)
-    };
-    setWorldCharacters(prev => [charWithCoords, ...prev]);
-    setMyCharacterId(newChar.id);
-    setCurrentCapacity(prev => prev + 1);
-    setStep(2);
+    try {
+      const user = firebaseAuth.currentUser || (await signInAnonymously(firebaseAuth)).user;
+      let sharedImageUrl = null;
+
+      if (newChar.imageUrl) {
+        const imageBlob = await fetch(newChar.imageUrl).then(response => response.blob());
+        const imageRef = storageRef(firebaseStorage, `character-images/${user.uid}/${newChar.id}`);
+        await uploadBytes(imageRef, imageBlob, { contentType: imageBlob.type || 'image/png' });
+        sharedImageUrl = await getDownloadURL(imageRef);
+      }
+
+      const charWithCoords = {
+        ...newChar,
+        imageUrl: sharedImageUrl,
+        x: 1500 + (Math.random() * 120 - 60),
+        y: 1500 + (Math.random() * 120 - 60),
+        ownerUid: user.uid,
+        updatedAtMs: Date.now()
+      };
+      delete charWithCoords.isUser;
+
+      await setDoc(doc(firebaseDb, 'characters', newChar.id), charWithCoords);
+      setMyCharacterId(newChar.id);
+      window.localStorage.setItem('kspo-my-character-id', newChar.id);
+      setStep(2);
+    } catch {
+      showModal('저장 실패', 'Firebase Firestore·Storage 설정과 권한을 확인해 주세요.', null, false);
+    }
   };
 
   const handleUpdateCharacterPosition = useCallback((id, newX, newY) => {
     setWorldCharacters(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
+    if (id.startsWith('preset-')) return;
+    const oldTimer = positionSaveTimersRef.current.get(id);
+    if (oldTimer) window.clearTimeout(oldTimer);
+    const timer = window.setTimeout(() => {
+      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, updatedAtMs: Date.now() }).catch(() => {});
+      positionSaveTimersRef.current.delete(id);
+    }, 250);
+    positionSaveTimersRef.current.set(id, timer);
   }, []);
 
-  const handleDeleteCharacter = useCallback((id) => {
+  const handleDeleteCharacter = useCallback(async (id) => {
     if (!isAdmin && id !== myCharacterId) return;
+    if (!id.startsWith('preset-')) {
+      try {
+        await deleteDoc(doc(firebaseDb, 'characters', id));
+      } catch {
+        showModal('삭제 실패', 'Firestore 삭제 권한을 확인해 주세요.', null, false);
+        return;
+      }
+    }
     setWorldCharacters(prev => prev.filter(c => c.id !== id));
-    setCurrentCapacity(prev => Math.max(0, prev - 1));
     if (id === myCharacterId) {
       setMyCharacterId(null);
+      window.localStorage.removeItem('kspo-my-character-id');
       showModal('알림', '자신의 캐릭터를 삭제하여 구경 모드로 전환됩니다.', null, false);
     }
   }, [isAdmin, myCharacterId, showModal]);
 
   const handleAddJumps = useCallback((id, amount, stopAtRestBoundary = false) => {
     const now = Date.now();
+    let savedChanges = null;
     setWorldCharacters(prev => prev.map(c => {
       if (c.id !== id || (c.restUntil && now < c.restUntil)) return c;
 
@@ -1019,31 +1168,54 @@ export default function App() {
       if (stopAtRestBoundary) {
         const nextRestBoundary = (Math.floor(currentJumps / 50) + 1) * 50;
         if (requestedJumps >= nextRestBoundary) {
-          return { ...c, jumpsCount: nextRestBoundary, restUntil: now + 10000 };
+          savedChanges = { jumpsCount: nextRestBoundary, restUntil: now + 10000, updatedAtMs: now };
+          return { ...c, ...savedChanges };
         }
       }
 
-      return { ...c, jumpsCount: requestedJumps };
+      savedChanges = { jumpsCount: requestedJumps, updatedAtMs: now };
+      return { ...c, ...savedChanges };
     }));
+    if (!id.startsWith('preset-')) {
+      window.setTimeout(() => {
+        if (savedChanges) updateDoc(doc(firebaseDb, 'characters', id), savedChanges).catch(() => {});
+      }, 0);
+    }
   }, []);
 
   const handleUpdateBestScore = useCallback((id, gameType, score) => {
+    let bestScoreChanged = false;
     setWorldCharacters(prev => prev.map(c => {
       if (c.id === id) {
         const currentBest = c[`${gameType}Best`] || 0;
         if (score > currentBest) {
+          bestScoreChanged = true;
           return { ...c, [`${gameType}Best`]: score };
         }
       }
       return c;
     }));
+    if (!id.startsWith('preset-')) {
+      window.setTimeout(() => {
+        if (bestScoreChanged) updateDoc(doc(firebaseDb, 'characters', id), { [`${gameType}Best`]: score, updatedAtMs: Date.now() }).catch(() => {});
+      }, 0);
+    }
   }, []);
 
-  const handleResetWorld = useCallback(() => {
+  const handleResetWorld = useCallback(async () => {
     if (!isAdmin) return;
-    setWorldCharacters([]);
-    setCurrentCapacity(0);
+    const snapshot = await getDocs(collection(firebaseDb, 'characters'));
+    const batches = [];
+    for (let i = 0; i < snapshot.docs.length; i += 450) {
+      const batch = writeBatch(firebaseDb);
+      snapshot.docs.slice(i, i + 450).forEach(characterDoc => batch.delete(characterDoc.ref));
+      batches.push(batch.commit());
+    }
+    await Promise.all(batches);
+    setWorldCharacters(PRESET_CHARACTERS);
+    setCurrentCapacity(INITIAL_FILL);
     setMyCharacterId(null);
+    window.localStorage.removeItem('kspo-my-character-id');
     setIsFull(false);
     showModal('초기화 완료', '월드가 완전히 초기화되었습니다.', null, false);
   }, [isAdmin, showModal]);
@@ -1136,10 +1308,25 @@ function Step1Create({
   motionType, setMotionType, hasItem, setHasItem, onRegister, isFull
 }) {
   const [isTestJumping, setIsTestJumping] = useState(false);
+  const [isImageProcessing, setIsImageProcessing] = useState(false);
+  const [imageMessage, setImageMessage] = useState('');
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) setCharacterImage(URL.createObjectURL(file));
+    if (!file) return;
+    setIsImageProcessing(true);
+    setImageMessage('사진을 자동으로 최적화하는 중...');
+    try {
+      const compressedBlob = await compressCharacterImage(file);
+      if (characterImage?.startsWith('blob:')) URL.revokeObjectURL(characterImage);
+      setCharacterImage(URL.createObjectURL(compressedBlob));
+      setImageMessage(`압축 완료 · ${(compressedBlob.size / 1024).toFixed(1)}KB · WebP`);
+    } catch (error) {
+      setImageMessage(error instanceof Error ? error.message : '이미지 압축에 실패했습니다.');
+    } finally {
+      setIsImageProcessing(false);
+      e.target.value = '';
+    }
   };
 
   const handleEmojiChange = (e) => setCharacterEmoji(sliceEmojiString(e.target.value, 2));
@@ -1213,12 +1400,13 @@ function Step1Create({
               <div className="flex flex-col gap-1">
                 <label className="text-sm text-gray-700">또는 내 이미지 업로드:</label>
                 <div className="flex gap-1">
-                  <label className="win95-button flex-1 cursor-pointer flex justify-center py-1">
-                    <span>파일 찾기...</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  <label className={`win95-button flex-1 flex justify-center py-1 ${isImageProcessing ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+                    <span>{isImageProcessing ? '압축 중...' : '파일 찾기...'}</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isImageProcessing} />
                   </label>
-                  {characterImage && <button onClick={() => setCharacterImage(null)} className="win95-button text-red-600 px-2 font-bold py-1">X 제거</button>}
+                  {characterImage && <button onClick={() => { if (characterImage.startsWith('blob:')) URL.revokeObjectURL(characterImage); setCharacterImage(null); setImageMessage(''); }} className="win95-button text-red-600 px-2 font-bold py-1">X 제거</button>}
                 </div>
+                {imageMessage && <div className={`text-[10px] mt-1 ${imageMessage.startsWith('압축 완료') ? 'text-green-800' : 'text-red-700'}`}>{imageMessage}</div>}
               </div>
             </div>
 
@@ -1390,11 +1578,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
       <div className="bg-[#c0c0c0] p-1 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[var(--win-border-dark)] z-50">
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={onGoHome} className="win95-button hidden sm:inline-block">◀ 뒤로</button>
+          <button onClick={onGoHome} className="win95-button">◀ 뒤로</button>
           <div className="flex items-center gap-1 ml-2"><span className="text-xs">찾기:</span><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="win95-input w-24 sm:w-32" /></div>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={onGoHome} className="win95-button sm:hidden font-bold">◀ 뒤로</button>
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {myCharacterId && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
           {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
