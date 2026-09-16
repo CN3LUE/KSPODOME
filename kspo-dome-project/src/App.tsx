@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDocs, getFirestore, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { collection, deleteDoc, doc, getCountFromServer, getDocs, getFirestore, limit, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap');
@@ -177,6 +176,7 @@ const globalStyles = `
 
 const MAX_CAPACITY = 15000;
 const INITIAL_FILL = 10240;
+const MAX_SHARED_CHARACTERS = 500;
 
 const DEFAULT_STAGE_IMG = encodeURI("image_057089.jpg");
 const DEFAULT_FAN_IMG = encodeURI("image_05708b.png");
@@ -195,7 +195,6 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 const firebaseDb = getFirestore(firebaseApp);
-const firebaseStorage = getStorage(firebaseApp);
 const IS_ADMIN_PAGE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1';
 
 const sliceEmojiString = (str, limit) => {
@@ -206,6 +205,17 @@ const sliceEmojiString = (str, limit) => {
 const canvasToBlob = (canvas, type, quality): Promise<Blob> => new Promise((resolve, reject) => {
   canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('이미지 변환 실패')), type, quality);
 });
+
+const blobToDataUrl = (blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(new Error('이미지 변환 실패'));
+  reader.readAsDataURL(blob);
+});
+
+const MAP_CELL_SIZE = 600;
+const MAP_CELL_COUNT = 5;
+const getCellId = (x, y) => `${Math.max(0, Math.min(MAP_CELL_COUNT - 1, Math.floor(x / MAP_CELL_SIZE)))}_${Math.max(0, Math.min(MAP_CELL_COUNT - 1, Math.floor(y / MAP_CELL_SIZE)))}`;
 
 // 사용자가 고른 원본을 128px 이하 WebP로 바꾸고 50KB 안쪽으로 자동 압축합니다.
 const compressCharacterImage = async (file) => {
@@ -938,7 +948,9 @@ export default function App() {
   
   const [worldCharacters, setWorldCharacters] = useState([]);
   const [myCharacterId, setMyCharacterId] = useState(null);
+  const [viewportCell, setViewportCell] = useState({ x: 2, y: 2 });
   const [currentCapacity, setCurrentCapacity] = useState(INITIAL_FILL);
+  const [sharedCharacterCount, setSharedCharacterCount] = useState(0);
   const [isFull, setIsFull] = useState(false);
 
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
@@ -1016,25 +1028,58 @@ export default function App() {
     setAdminPassword('');
   };
 
-  // Firestore의 characters 컬렉션을 모든 접속자와 실시간 공유합니다.
+  // 현재 화면 주변 3x3 구역에서 최대 40명만 실시간으로 불러옵니다.
   useEffect(() => {
     const savedMyCharacterId = window.localStorage.getItem('kspo-my-character-id');
     if (savedMyCharacterId) setMyCharacterId(savedMyCharacterId);
 
-    const unsubscribe = onSnapshot(collection(firebaseDb, 'characters'), (snapshot) => {
+    const nearbyCellIds = [];
+    for (let y = viewportCell.y - 1; y <= viewportCell.y + 1; y += 1) {
+      for (let x = viewportCell.x - 1; x <= viewportCell.x + 1; x += 1) {
+        if (x >= 0 && x < MAP_CELL_COUNT && y >= 0 && y < MAP_CELL_COUNT) nearbyCellIds.push(`${x}_${y}`);
+      }
+    }
+
+    const nearbyQuery = query(
+      collection(firebaseDb, 'characters'),
+      where('cellId', 'in', nearbyCellIds),
+      limit(40)
+    );
+
+    const unsubscribe = onSnapshot(nearbyQuery, (snapshot) => {
       const sharedCharacters = snapshot.docs.map(characterDoc => ({
         ...characterDoc.data(),
         id: characterDoc.id,
         isUser: true
       }));
-      setWorldCharacters([...PRESET_CHARACTERS, ...sharedCharacters]);
-      setCurrentCapacity(INITIAL_FILL + sharedCharacters.length);
+      setWorldCharacters(previousCharacters => {
+        const myPreviousCharacter = previousCharacters.find(character => character.id === myCharacterId);
+        const hasMyCharacter = sharedCharacters.some(character => character.id === myCharacterId);
+        return [
+          ...PRESET_CHARACTERS,
+          ...sharedCharacters,
+          ...(myPreviousCharacter && !hasMyCharacter ? [myPreviousCharacter] : [])
+        ];
+      });
     }, () => {
       showModal('연결 오류', 'Firestore 읽기 권한과 보안 규칙을 확인해 주세요.', null, false);
     });
 
     return unsubscribe;
-  }, [showModal]);
+  }, [showModal, viewportCell.x, viewportCell.y, myCharacterId]);
+
+  useEffect(() => {
+    getCountFromServer(collection(firebaseDb, 'characters'))
+      .then(result => {
+        setSharedCharacterCount(result.data().count);
+        setCurrentCapacity(INITIAL_FILL + result.data().count);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleViewportChange = useCallback((x, y) => {
+    setViewportCell(previous => previous.x === x && previous.y === y ? previous : { x, y });
+  }, []);
 
   // 1초마다 +1 패시브 점프
   useEffect(() => {
@@ -1091,7 +1136,7 @@ export default function App() {
   }, [step, myCharacterId]);
 
   const handleRegister = async (newChar) => {
-    if (currentCapacity >= MAX_CAPACITY) {
+    if (currentCapacity >= MAX_CAPACITY || sharedCharacterCount >= MAX_SHARED_CHARACTERS) {
         showModal('접속 불가', '광장 수용 인원이 가득 찼습니다.', null, false);
         return; 
     }
@@ -1101,27 +1146,30 @@ export default function App() {
 
       if (newChar.imageUrl) {
         const imageBlob = await fetch(newChar.imageUrl).then(response => response.blob());
-        const imageRef = storageRef(firebaseStorage, `character-images/${user.uid}/${newChar.id}`);
-        await uploadBytes(imageRef, imageBlob, { contentType: imageBlob.type || 'image/png' });
-        sharedImageUrl = await getDownloadURL(imageRef);
+        sharedImageUrl = await blobToDataUrl(imageBlob);
       }
 
+      const startX = 1500 + (Math.random() * 120 - 60);
+      const startY = 1500 + (Math.random() * 120 - 60);
       const charWithCoords = {
         ...newChar,
         imageUrl: sharedImageUrl,
-        x: 1500 + (Math.random() * 120 - 60),
-        y: 1500 + (Math.random() * 120 - 60),
+        x: startX,
+        y: startY,
+        cellId: getCellId(startX, startY),
         ownerUid: user.uid,
         updatedAtMs: Date.now()
       };
       delete charWithCoords.isUser;
 
       await setDoc(doc(firebaseDb, 'characters', newChar.id), charWithCoords);
+      setCurrentCapacity(prev => prev + 1);
+      setSharedCharacterCount(prev => prev + 1);
       setMyCharacterId(newChar.id);
       window.localStorage.setItem('kspo-my-character-id', newChar.id);
       setStep(2);
     } catch {
-      showModal('저장 실패', 'Firebase Firestore·Storage 설정과 권한을 확인해 주세요.', null, false);
+      showModal('저장 실패', 'Firestore 설정과 보안 규칙을 확인해 주세요.', null, false);
     }
   };
 
@@ -1131,7 +1179,7 @@ export default function App() {
     const oldTimer = positionSaveTimersRef.current.get(id);
     if (oldTimer) window.clearTimeout(oldTimer);
     const timer = window.setTimeout(() => {
-      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, updatedAtMs: Date.now() }).catch(() => {});
+      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId: getCellId(newX, newY), updatedAtMs: Date.now() }).catch(() => {});
       positionSaveTimersRef.current.delete(id);
     }, 250);
     positionSaveTimersRef.current.set(id, timer);
@@ -1150,6 +1198,8 @@ export default function App() {
     setWorldCharacters(prev => prev.filter(c => c.id !== id));
     if (id === myCharacterId) {
       setMyCharacterId(null);
+      setCurrentCapacity(prev => Math.max(INITIAL_FILL, prev - 1));
+      setSharedCharacterCount(prev => Math.max(0, prev - 1));
       window.localStorage.removeItem('kspo-my-character-id');
       showModal('알림', '자신의 캐릭터를 삭제하여 구경 모드로 전환됩니다.', null, false);
     }
@@ -1214,6 +1264,7 @@ export default function App() {
     await Promise.all(batches);
     setWorldCharacters(PRESET_CHARACTERS);
     setCurrentCapacity(INITIAL_FILL);
+    setSharedCharacterCount(0);
     setMyCharacterId(null);
     window.localStorage.removeItem('kspo-my-character-id');
     setIsFull(false);
@@ -1273,6 +1324,7 @@ export default function App() {
             onDeleteCharacter={handleDeleteCharacter} sysStageImg={sysStageImg} sysFanImg={sysFanImg}
             onAddJumps={handleAddJumps} onResetWorld={handleResetWorld} onShowConfirm={showModal}
             onUpdateBestScore={handleUpdateBestScore}
+            onViewportChange={handleViewportChange}
           />
         )}
       </main>
@@ -1431,7 +1483,7 @@ function Step1Create({
   );
 }
 
-function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore }) {
+function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange }) {
   const containerRef = useRef(null);
   const rafRef = useRef(null);
   const dragDistanceRef = useRef(0);
@@ -1455,6 +1507,21 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   useEffect(() => {
     transformRef.current = transform;
   }, [transform]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const current = transformRef.current;
+      const centerWorldX = Math.max(0, Math.min(2999, ((rect.width / 2) - current.x) / current.scale));
+      const centerWorldY = Math.max(0, Math.min(2999, ((rect.height / 2) - current.y) / current.scale));
+      onViewportChange(
+        Math.floor(centerWorldX / MAP_CELL_SIZE),
+        Math.floor(centerWorldY / MAP_CELL_SIZE)
+      );
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [transform, onViewportChange]);
 
   const filteredChars = useMemo(() => {
     if (!searchTerm) return characters;
