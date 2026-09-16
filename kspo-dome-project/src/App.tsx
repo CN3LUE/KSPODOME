@@ -17,7 +17,7 @@ const globalStyles = `
   }
 
   body {
-    background-color: #008080; 
+    background-color: #303030;
     color: var(--win-text);
     overflow: hidden;
     font-family: 'DungGeunMo', 'MS Sans Serif', Tahoma, sans-serif;
@@ -1390,10 +1390,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
       <div className="bg-[#c0c0c0] p-1 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[var(--win-border-dark)] z-50">
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={onGoHome} className="win95-button">◀ 뒤로</button>
+          <button onClick={onGoHome} className="win95-button hidden sm:inline-block">◀ 뒤로</button>
           <div className="flex items-center gap-1 ml-2"><span className="text-xs">찾기:</span><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="win95-input w-24 sm:w-32" /></div>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
+          <button onClick={onGoHome} className="win95-button sm:hidden font-bold">◀ 뒤로</button>
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {myCharacterId && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
           {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
