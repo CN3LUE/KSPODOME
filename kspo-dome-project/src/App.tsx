@@ -1055,7 +1055,7 @@ export default function App() {
       <style>{globalStyles}</style>
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
-      <header className="win95-panel m-0 p-2 flex flex-col md:flex-row justify-between items-center gap-4 z-40">
+      <header className="win95-panel m-0 p-1 sm:p-2 flex flex-col md:flex-row justify-between items-center gap-1 sm:gap-4 z-40">
         <div className="flex items-center gap-2 px-2 w-full md:w-auto justify-start">
           <div className="flex items-center gap-2">
             <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWpz2kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA6SURBVChTY/z//z8DtQATAxWASTT//9sV9A8nQ9Vwg0BcEKYIboBIAwB2F1FkA7oBsAC6AcQGIMv/GQC0oSEW4K7rKAAAAABJRU5ErkJggg==" alt="icon" className="w-4 h-4 rendering-pixelated" />
@@ -1084,7 +1084,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 relative w-full h-full p-2 flex items-center justify-center">
+      <main className="flex-1 relative w-full h-full p-1 sm:p-2 flex items-center justify-center min-h-0">
         {step === 1 ? (
           <Step1Create 
             characterName={characterName} setCharacterName={setCharacterName}
@@ -1093,7 +1093,6 @@ export default function App() {
             motionType={motionType} setMotionType={setMotionType}
             hasItem={hasItem} setHasItem={setHasItem}
             onRegister={handleRegister} isFull={isFull}
-            setSysStageImg={setSysStageImg} setSysFanImg={setSysFanImg}
           />
         ) : (
           <Step2GlobalSquare 
@@ -1134,8 +1133,7 @@ export default function App() {
 
 function Step1Create({ 
   characterName, setCharacterName, characterImage, setCharacterImage, characterEmoji, setCharacterEmoji, 
-  motionType, setMotionType, hasItem, setHasItem, onRegister, isFull,
-  setSysStageImg, setSysFanImg
+  motionType, setMotionType, hasItem, setHasItem, onRegister, isFull
 }) {
   const [isTestJumping, setIsTestJumping] = useState(false);
 
@@ -1161,23 +1159,23 @@ function Step1Create({
   };
 
   return (
-    <div className="win95-window w-full max-w-xl mx-auto flex flex-col shadow-[4px_4px_0_rgba(0,0,0,0.5)] z-10 max-h-[90vh] overflow-y-auto">
+    <div className="win95-window w-full max-w-xl mx-auto flex flex-col shadow-[4px_4px_0_rgba(0,0,0,0.5)] z-10 max-h-[calc(100dvh-92px)] sm:max-h-[90vh] overflow-y-auto">
       <div className="win95-titlebar">
         <div className="flex items-center gap-1.5"><span>캐릭터_생성.exe</span></div>
         <button className="win95-title-btn">X</button>
       </div>
 
-      <div className="p-4 flex flex-col md:flex-row gap-4 bg-[#c0c0c0] text-black">
-        <div className="flex flex-col gap-2 md:w-1/2">
-          <label className="text-sm font-bold">미리보기 (Preview)</label>
-          <div className="win95-panel w-full aspect-square bg-white flex items-end justify-center pb-8 relative overflow-hidden">
+      <div className="p-2 sm:p-4 flex flex-col md:flex-row gap-2 sm:gap-4 bg-[#c0c0c0] text-black">
+        <div className="flex flex-col gap-1 sm:gap-2 md:w-1/2">
+          <label className="text-xs sm:text-sm font-bold">미리보기 (Preview)</label>
+          <div className="win95-panel w-full h-28 sm:h-auto sm:aspect-square bg-white flex items-end justify-center pb-4 sm:pb-8 relative overflow-hidden">
             <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none"></div>
-            <div className={`flex items-center justify-center w-24 h-24 z-10 ${isTestJumping ? 'jump-once-' + motionType : ''}`}>
+            <div className={`flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24 z-10 ${isTestJumping ? 'jump-once-' + motionType : ''}`}>
               <div className="relative inline-flex items-center justify-center pointer-events-none">
                 {characterImage ? (
-                  <img src={characterImage} alt="preview" className="max-w-[96px] max-h-[96px] object-contain pixelated" />
+                  <img src={characterImage} alt="preview" className="max-w-[80px] max-h-[80px] sm:max-w-[96px] sm:max-h-[96px] object-contain pixelated" />
                 ) : (
-                  <span className="text-6xl" style={{ textShadow: '2px 2px 0 #fff' }}>{characterEmoji}</span>
+                  <span className="text-5xl sm:text-6xl" style={{ textShadow: '2px 2px 0 #fff' }}>{characterEmoji}</span>
                 )}
                 {hasItem && (
                   <div className="absolute top-0 right-0 w-full h-full pointer-events-none">
@@ -1188,32 +1186,26 @@ function Step1Create({
                 )}
               </div>
             </div>
-            <div className="absolute bottom-6 w-12 h-1 bg-gray-400 rounded-[100%] scale-x-150 z-0"></div>
+            <div className="absolute bottom-3 sm:bottom-6 w-12 h-1 bg-gray-400 rounded-[100%] scale-x-150 z-0"></div>
           </div>
-          <button onClick={handleTestJump} className="win95-button w-full">모션 테스트 (T)</button>
-
-          <div className="mt-2 p-2 border-2 border-red-800 bg-red-100 flex flex-col gap-1 text-[10px]">
-            <div className="font-bold text-red-800 flex items-center gap-1"><span className="text-sm">🚨</span> 시스템 에셋 수동 업로드 (선택)</div>
-            <div className="flex gap-1 items-center"><span className="w-16 font-bold">1. 무대:</span><input type="file" accept="image/*" onChange={(e) => { if(e.target.files[0]) setSysStageImg(URL.createObjectURL(e.target.files[0])); }} className="w-full" /></div>
-            <div className="flex gap-1 items-center mt-1"><span className="w-16 font-bold">2. 부채:</span><input type="file" accept="image/*" onChange={(e) => { if(e.target.files[0]) setSysFanImg(URL.createObjectURL(e.target.files[0])); }} className="w-full" /></div>
-          </div>
+          <button onClick={handleTestJump} className="win95-button w-full py-0.5 sm:py-1 text-xs sm:text-sm">모션 테스트 (T)</button>
         </div>
 
-        <div className="flex flex-col gap-4 md:w-1/2 justify-between">
-          <div className="space-y-4">
-            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-3 relative pt-4">
+        <div className="flex flex-col gap-2 sm:gap-4 md:w-1/2 justify-between">
+          <div className="space-y-2 sm:space-y-4">
+            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-2 sm:p-3 relative pt-3 sm:pt-4">
               <span className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 text-sm font-bold">닉네임 입력:</span>
               <input type="text" value={characterName} onChange={(e) => setCharacterName(e.target.value)} placeholder="이름을 입력하세요" className="win95-input w-full" maxLength={12} />
             </div>
 
-            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-3 relative pt-4 mt-2">
+            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-2 sm:p-3 relative pt-3 sm:pt-4 mt-2">
               <span className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 text-sm font-bold">캐릭터 외형</span>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-1 sm:mb-2">
                 <label className="text-sm w-20 font-bold">이모지 입력:</label>
                 <input type="text" value={characterEmoji} onChange={handleEmojiChange} className="win95-input w-16 text-center text-xl bg-white" placeholder="😎" />
                 <span className="text-xs text-gray-600">(최대 2개)</span>
               </div>
-              <hr className="border-t border-[var(--win-border-dark)] my-2" />
+              <hr className="border-t border-[var(--win-border-dark)] my-1 sm:my-2" />
               <div className="flex flex-col gap-1">
                 <label className="text-sm text-gray-700">또는 내 이미지 업로드:</label>
                 <div className="flex gap-1">
@@ -1226,9 +1218,9 @@ function Step1Create({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-3 relative pt-4 mt-2">
+            <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-2 sm:p-3 relative pt-3 sm:pt-4 mt-2">
               <span className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 text-sm font-bold">점프 스타일</span>
-              <div className="flex flex-col gap-2 mt-1">
+              <div className="flex flex-col gap-1 sm:gap-2 mt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" checked={motionType === 0} onChange={() => setMotionType(0)} className="accent-[#000080]" />1. 기본 점프</label>
                 <label className="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" checked={motionType === 1} onChange={() => setMotionType(1)} className="accent-[#000080]" />2. 2단 콩콩 (뽀잉뽀잉)</label>
               </div>
@@ -1240,8 +1232,8 @@ function Step1Create({
             </label>
           </div>
 
-          <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-[var(--win-border-white)]">
-            <button onClick={handleSubmit} disabled={!characterName.trim() || isFull} className="win95-button font-bold py-2 w-full text-base">
+          <div className="flex flex-col gap-1 mt-1 sm:mt-4 pt-2 sm:pt-4 border-t border-[var(--win-border-white)]">
+            <button onClick={handleSubmit} disabled={!characterName.trim() || isFull} className="win95-button font-bold py-1.5 sm:py-2 w-full text-sm sm:text-base">
               {isFull ? '접속 불가 (마감)' : '입장하기 (Enter)'}
             </button>
           </div>
@@ -1255,6 +1247,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const containerRef = useRef(null);
   const rafRef = useRef(null);
   const dragDistanceRef = useRef(0);
+  const lastPointerRef = useRef({ x: 0, y: 0 });
   
   const [transform, setTransform] = useState({ x: -600, y: -600, scale: 0.85 });
   const [isDragging, setIsDragging] = useState(false);
@@ -1275,15 +1268,22 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
   const WORLD_SIZE = 3000;
 
-  const handleMouseDown = (e) => {
+  const handlePointerDown = (e) => {
     if (draggingCharId) return;
-    setIsDragging(true); dragDistanceRef.current = 0;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setIsDragging(true);
+    dragDistanceRef.current = 0;
+    lastPointerRef.current = { x: e.clientX, y: e.clientY };
     setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
   };
 
-  const handleMouseMove = (e) => {
+  const handlePointerMove = (e) => {
+    const dx = e.clientX - lastPointerRef.current.x;
+    const dy = e.clientY - lastPointerRef.current.y;
+    lastPointerRef.current = { x: e.clientX, y: e.clientY };
+
     if (draggingCharId) {
-      dragDistanceRef.current += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
+      dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
         const blueprintEl = containerRef.current?.querySelector('.bg-grid');
@@ -1302,7 +1302,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     });
   };
 
-  const handleMouseUp = () => { setIsDragging(false); setDraggingCharId(null); };
+  const handlePointerUp = (e) => {
+    if (e?.currentTarget?.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setIsDragging(false);
+    setDraggingCharId(null);
+  };
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -1327,11 +1331,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       </div>
 
       <div className="bg-[#c0c0c0] p-1 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[var(--win-border-dark)] z-50">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           <button onClick={onGoHome} className="win95-button">◀ 뒤로</button>
           <div className="flex items-center gap-1 ml-2"><span className="text-xs">찾기:</span><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="win95-input w-24 sm:w-32" /></div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {myCharacterId && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
           {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
@@ -1343,7 +1347,16 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         </div>
       </div>
 
-      <div className="win95-panel flex-1 relative overflow-hidden bg-[#e0e0e0] cursor-crosshair active:cursor-move" ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onWheel={handleWheel}>
+      <div
+        className="win95-panel flex-1 relative overflow-hidden bg-[#e0e0e0] cursor-crosshair active:cursor-move min-h-0"
+        ref={containerRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={handleWheel}
+        style={{ touchAction: 'none' }}
+      >
         <div className="relative bg-grid origin-top-left" style={{ width: `${WORLD_SIZE}px`, height: `${WORLD_SIZE}px`, transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, willChange: 'transform' }}>
           
           <div className="absolute top-[1500px] left-[1500px] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0">
@@ -1362,7 +1375,15 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                 style={{ left: char.x, top: char.y, transform: 'translate(-50%, -100%)' }}
                 onMouseEnter={() => { if (!isDragging && !draggingCharId) setHoveredChar(char.id); }}
                 onMouseLeave={() => { if (!isDragging) setHoveredChar(null); }}
-                onMouseDown={(e) => { if (canEdit) { e.stopPropagation(); setDraggingCharId(char.id); dragDistanceRef.current = 0; } }}
+                onPointerDown={(e) => {
+                  if (canEdit) {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                    lastPointerRef.current = { x: e.clientX, y: e.clientY };
+                    setDraggingCharId(char.id);
+                    dragDistanceRef.current = 0;
+                  }
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (canEdit && dragDistanceRef.current > 5) return; 
