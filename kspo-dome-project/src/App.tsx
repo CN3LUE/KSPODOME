@@ -1736,8 +1736,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       >
         <div className="relative bg-grid origin-top-left" style={{ width: `${WORLD_SIZE}px`, height: `${WORLD_SIZE}px`, transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, willChange: 'transform' }}>
           
-          <div className="absolute top-[1500px] left-[1500px] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0">
-             <img src={sysStageImg} alt="stage" className="w-[800px] h-[800px] object-contain opacity-80" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+             <img src={sysStageImg} alt="stage" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
 
           {filteredChars.map((char) => {
