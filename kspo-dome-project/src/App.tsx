@@ -274,23 +274,40 @@ const getBadgeName = (jumps) => {
 const generatePresets = (count) => {
   const names = ['치이카와', '짱구', '에바뛰', '월요일', '개발자_01', '락덕', '씨엔블루', '디자이너', '안녕하세요', '체조'];
   const emojis = ['🐹', '👦', '🖤', '👿', '💻', '🎸', '🥁', '🎨', '🔥', '👻', '😎', '😜', '😍', '🎉', '🌟'];
+
+  // 같은 순번으로 X/Y를 계산하면 대각선 띠가 생기므로, 월드를 작은 구역으로
+  // 나눈 뒤 각 구역 안에서 서로 다른 고정 난수로 위치를 흩뿌립니다.
+  const columns = 15;
+  const rows = Math.ceil(count / columns);
+  const seededUnit = (seed) => {
+    const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+    return value - Math.floor(value);
+  };
   
-  return Array.from({ length: count }).map((_, i) => ({
-    id: 'preset-' + i,
-    name: names[i % names.length] + '_' + i.toString().padStart(3, '0'),
-    emoji: emojis[i % emojis.length],
-    imageUrl: null,
-    hasItem: i % 2 === 0,
-    x: ((i * 137) % 2800) + 100,
-    y: ((i * 271) % 2800) + 100,
-    delay: -((i % 20) / 10),
-    duration: 1.0 + ((i % 5) / 10),
-    motionType: i % 2,
-    jumpsCount: 1200 + ((i * 631) % 95000),
-    isUser: false,
-    runBest: (i * 17) % 80,
-    roofBest: (i * 29) % 400
-  }));
+  return Array.from({ length: count }).map((_, i) => {
+    const scatteredIndex = (i * 73) % count;
+    const column = scatteredIndex % columns;
+    const row = Math.floor(scatteredIndex / columns);
+    const cellWidth = 2860 / columns;
+    const cellHeight = 2860 / rows;
+
+    return {
+      id: 'preset-' + i,
+      name: names[i % names.length] + '_' + i.toString().padStart(3, '0'),
+      emoji: emojis[i % emojis.length],
+      imageUrl: null,
+      hasItem: i % 2 === 0,
+      x: 70 + (column + 0.15 + seededUnit(i * 2 + 1) * 0.7) * cellWidth,
+      y: 70 + (row + 0.15 + seededUnit(i * 2 + 2) * 0.7) * cellHeight,
+      delay: -((i % 20) / 10),
+      duration: 1.0 + ((i % 5) / 10),
+      motionType: i % 2,
+      jumpsCount: 1200 + ((i * 631) % 95000),
+      isUser: false,
+      runBest: (i * 17) % 80,
+      roofBest: (i * 29) % 400
+    };
+  });
 };
 
 const PRESET_CHARACTERS = generatePresets(150);
@@ -933,6 +950,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 }
 
 export default function App() {
+  const [appHeight, setAppHeight] = useState(() => typeof window === 'undefined' ? 800 : window.innerHeight);
   const [step, setStep] = useState(1);
   const [characterName, setCharacterName] = useState('');
   const [characterImage, setCharacterImage] = useState(null);
@@ -963,6 +981,37 @@ export default function App() {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
   }, []);
 
+  // iOS Safari가 키보드를 닫은 뒤에도 줄어든 높이를 유지하는 현상을 보정합니다.
+  useEffect(() => {
+    const updateAppHeight = () => {
+      const nextHeight = window.visualViewport?.height || window.innerHeight;
+      setAppHeight(Math.round(nextHeight));
+    };
+    const refreshAfterKeyboard = () => {
+      updateAppHeight();
+      window.setTimeout(updateAppHeight, 120);
+      window.setTimeout(updateAppHeight, 350);
+      window.setTimeout(updateAppHeight, 700);
+    };
+
+    updateAppHeight();
+    window.addEventListener('resize', updateAppHeight);
+    window.addEventListener('orientationchange', refreshAfterKeyboard);
+    window.addEventListener('pageshow', refreshAfterKeyboard);
+    document.addEventListener('focusout', refreshAfterKeyboard);
+    window.visualViewport?.addEventListener('resize', updateAppHeight);
+    window.visualViewport?.addEventListener('scroll', updateAppHeight);
+
+    return () => {
+      window.removeEventListener('resize', updateAppHeight);
+      window.removeEventListener('orientationchange', refreshAfterKeyboard);
+      window.removeEventListener('pageshow', refreshAfterKeyboard);
+      document.removeEventListener('focusout', refreshAfterKeyboard);
+      window.visualViewport?.removeEventListener('resize', updateAppHeight);
+      window.visualViewport?.removeEventListener('scroll', updateAppHeight);
+    };
+  }, []);
+
   // Firebase 로그인 상태와 서버에서 발급된 admin Custom Claim을 확인합니다.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
@@ -971,8 +1020,14 @@ export default function App() {
           try {
             await signInAnonymously(firebaseAuth);
             return;
-          } catch {
-            setAdminLoginError('Firebase 익명 로그인을 확인해 주세요.');
+          } catch (error) {
+            console.error('Firebase anonymous sign-in failed:', error);
+            showModal(
+              '로그인 설정 필요',
+              'Firebase Authentication의 로그인 제공업체에서 익명(Anonymous) 로그인을 사용 설정해 주세요.',
+              null,
+              false
+            );
           }
         }
         setIsAdmin(false);
@@ -991,7 +1046,7 @@ export default function App() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [showModal]);
 
   const handleAdminLogin = async (e) => {
     e.preventDefault();
@@ -1030,6 +1085,9 @@ export default function App() {
 
   // 현재 화면 주변 3x3 구역에서 최대 40명만 실시간으로 불러옵니다.
   useEffect(() => {
+    // Firestore 규칙은 로그인 사용자를 기준으로 하므로 인증이 끝난 뒤에만 조회합니다.
+    if (!authReady || !firebaseAuth.currentUser) return;
+
     const savedMyCharacterId = window.localStorage.getItem('kspo-my-character-id');
     if (savedMyCharacterId) setMyCharacterId(savedMyCharacterId);
 
@@ -1061,21 +1119,23 @@ export default function App() {
           ...(myPreviousCharacter && !hasMyCharacter ? [myPreviousCharacter] : [])
         ];
       });
-    }, () => {
-      showModal('연결 오류', 'Firestore 읽기 권한과 보안 규칙을 확인해 주세요.', null, false);
+    }, (error) => {
+      console.error('Firestore nearby characters read failed:', error);
+      showModal('연결 오류', '로그인은 완료됐지만 Firestore 읽기가 거부되었습니다. characters 보안 규칙을 확인해 주세요.', null, false);
     });
 
     return unsubscribe;
-  }, [showModal, viewportCell.x, viewportCell.y, myCharacterId]);
+  }, [authReady, showModal, viewportCell.x, viewportCell.y, myCharacterId]);
 
   useEffect(() => {
+    if (!authReady || !firebaseAuth.currentUser) return;
     getCountFromServer(collection(firebaseDb, 'characters'))
       .then(result => {
         setSharedCharacterCount(result.data().count);
         setCurrentCapacity(INITIAL_FILL + result.data().count);
       })
       .catch(() => {});
-  }, []);
+  }, [authReady]);
 
   const handleViewportChange = useCallback((x, y) => {
     setViewportCell(previous => previous.x === x && previous.y === y ? previous : { x, y });
@@ -1168,8 +1228,9 @@ export default function App() {
       setMyCharacterId(newChar.id);
       window.localStorage.setItem('kspo-my-character-id', newChar.id);
       setStep(2);
-    } catch {
-      showModal('저장 실패', 'Firestore 설정과 보안 규칙을 확인해 주세요.', null, false);
+    } catch (error) {
+      console.error('Firestore character save failed:', error);
+      showModal('저장 실패', '캐릭터를 저장하지 못했습니다. 익명 로그인과 Firestore characters 쓰기 규칙을 확인해 주세요.', null, false);
     }
   };
 
@@ -1274,7 +1335,7 @@ export default function App() {
   const fillPercentage = ((currentCapacity / MAX_CAPACITY) * 100).toFixed(1);
 
   return (
-    <div className="w-full h-screen flex flex-col font-sans overflow-hidden bg-[#808080] text-black">
+    <div className="w-full flex flex-col font-sans overflow-hidden bg-[#808080] text-black" style={{ height: `${appHeight}px` }}>
       <style>{globalStyles}</style>
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
