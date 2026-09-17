@@ -396,7 +396,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const obstacles = [];
     const pits = [];
     const items = [];
-    let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0, done = false;
+    let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0;
+    let lastItemSpawn = 0, nextItemDelay = 360 + Math.random() * 180, done = false;
 
     const jump = () => {
       if (player.jumps < 2) { player.vy = player.jumps === 0 ? -15.5 : -13; player.jumps += 1; }
@@ -453,13 +454,13 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       player.shield = Math.max(0, player.shield - 1);
       player.invincible = Math.max(0, player.invincible - 1);
 
-      if (frame - lastSpawn > Math.max(46, 90 - clearedObstacles * 0.18)) {
+      const itemNearSpawnLane = items.some(item => item.x > GAME_WIDTH - 210);
+      if (!itemNearSpawnLane && frame - lastSpawn > Math.max(46, 90 - clearedObstacles * 0.18)) {
         lastSpawn = frame;
         const spawnPit = clearedObstacles >= 4 && Math.random() < .17;
         if (spawnPit) {
           const pitWidth = 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
-          if (Math.random() < .72) items.push({ x: GAME_WIDTH + 30 + pitWidth / 2, y: GROUND_Y - 82, kind: Math.random() < .5 ? "coin" : "star" });
         } else {
           const roll = Math.random();
           const type = roll < .18 ? "laser" : roll < .42 ? "drone" : roll < .75 ? "barrier" : "sign";
@@ -467,12 +468,19 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
             laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
           }[type];
           obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type });
-          if (Math.random() < .62) {
-            const itemRoll = Math.random();
-            const kind = itemRoll < .15 ? "shield" : itemRoll < .58 ? "coin" : "star";
-            items.push({ x: GAME_WIDTH + 65, y: 150 + Math.random() * 75, kind });
-          }
         }
+      }
+
+      const hazardNearItemLane = obstacles.some(o => o.x + o.w > GAME_WIDTH - 210)
+        || pits.some(pit => pit.x + pit.w > GAME_WIDTH - 210);
+      if (frame - lastItemSpawn >= nextItemDelay && !hazardNearItemLane) {
+        lastItemSpawn = frame;
+        nextItemDelay = 360 + Math.random() * 180;
+        items.push({
+          x: GAME_WIDTH + 35,
+          y: GROUND_Y - (72 + Math.random() * 55),
+          kind: Math.random() < .22 ? "shield" : "star"
+        });
       }
 
       for (let i = obstacles.length - 1; i >= 0; i -= 1) {
@@ -510,20 +518,29 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         ctx.globalAlpha = .28; ctx.fillStyle = i % 3 ? "#5de4ff" : "#ff62c0"; 
         ctx.fillRect((i * 89 - frame * speed * .18) % (GAME_WIDTH + 80), 65 + (i % 5) * 27, 2, 2); 
       }
-      ctx.globalAlpha = 1; ctx.fillStyle = "#1d1742"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
+      ctx.globalAlpha = 1; ctx.fillStyle = "#514579"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
       ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
       pits.forEach((pit) => {
         const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
-        abyss.addColorStop(0, "#02020b"); abyss.addColorStop(1, "#16051d");
+        abyss.addColorStop(0, "#050006"); abyss.addColorStop(1, "#6b0039");
         ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
-        ctx.strokeStyle = "#ff62c0"; ctx.lineWidth = 3; ctx.beginPath();
+        ctx.save();
+        ctx.beginPath(); ctx.rect(pit.x, GROUND_Y, pit.w, GAME_HEIGHT - GROUND_Y); ctx.clip();
+        ctx.globalAlpha = .55; ctx.strokeStyle = "#ff4fa3"; ctx.lineWidth = 5;
+        for (let stripeX = pit.x - 80; stripeX < pit.x + pit.w + 80; stripeX += 25) {
+          ctx.beginPath(); ctx.moveTo(stripeX, GROUND_Y + 2); ctx.lineTo(stripeX + 70, GAME_HEIGHT); ctx.stroke();
+        }
+        ctx.restore();
+        ctx.shadowColor = "#ff2f8b"; ctx.shadowBlur = 12;
+        ctx.strokeStyle = "#ff77bd"; ctx.lineWidth = 5; ctx.beginPath();
         ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
         ctx.moveTo(pit.x + pit.w, GROUND_Y); ctx.lineTo(pit.x + pit.w, GAME_HEIGHT); ctx.stroke();
+        ctx.shadowBlur = 0;
       });
       
       items.forEach((item) => { 
         ctx.font = "26px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(item.kind === "shield" ? "🛡️" : item.kind === "coin" ? "🪙" : "⭐", item.x, item.y); 
+        ctx.fillText(item.kind === "shield" ? "🛡️" : "⭐", item.x, item.y); 
       });
       
       obstacles.forEach((o) => {
@@ -558,7 +575,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
      if (gameState === 'READY' && canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
         ctx.fillStyle = '#090f2e'; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-        ctx.fillStyle = "#1d1742"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
+        ctx.fillStyle = "#514579"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
         ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
         
         if (playerImgRef.current) {
@@ -595,7 +612,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
                 <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} JUMP 획득</p>
-                <p className="text-xs text-[#ffd45f] mt-1">⭐·🪙 아이템 획득 시 즉시 +5 JUMP</p>
+                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 JUMP · 🛡️ 실드</p>
                 <p className="text-xs text-[#ff8bd0] mt-1">중간중간 등장하는 구덩이도 조심하세요!</p>
                 <p className="text-xs text-[#ffd45f] mt-1">공중 레이저 주의! 때로는 뛰지 않아야 안전해요.</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
