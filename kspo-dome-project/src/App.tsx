@@ -394,8 +394,9 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
 
     const player = { y: GROUND_Y - PLAYER_SIZE, vy: 0, jumps: 0, shield: 0, invincible: 0 };
     const obstacles = [];
+    const pits = [];
     const items = [];
-    let frame = 0, clearedObstacles = 0, speed = 7, lastSpawn = 0, done = false;
+    let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0, done = false;
 
     const jump = () => {
       if (player.jumps < 2) { player.vy = player.jumps === 0 ? -15.5 : -13; player.jumps += 1; }
@@ -413,7 +414,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       setGameState(stateRef.current);
       const earned = clearedObstacles * REWARD_PER_OBSTACLE;
       setFinalScore(clearedObstacles);
-      setReward(earned);
+      setReward(earned + bonusJumps);
       
       const { myCharacter: char, onAddJumps: add, onUpdateBestScore: updateBest } = propsRef.current;
       if (earned > 0 && char) add(char.id, earned);
@@ -435,24 +436,43 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const loop = () => {
       frame += 1;
       speed = 7 + Math.min(6, clearedObstacles * 0.025);
+      for (let i = pits.length - 1; i >= 0; i -= 1) {
+        const pit = pits[i];
+        pit.x -= speed;
+        if (pit.x + pit.w < 0) {
+          pits.splice(i, 1);
+          clearedObstacles += 1;
+          setScore(clearedObstacles);
+        }
+      }
       player.vy += 0.78;
       player.y += player.vy;
-      if (player.y >= GROUND_Y - PLAYER_SIZE) { player.y = GROUND_Y - PLAYER_SIZE; player.vy = 0; player.jumps = 0; }
+      const overPit = pits.some(pit => overlap(66, 98, pit.x + 3, pit.x + pit.w - 3));
+      if (player.y >= GROUND_Y - PLAYER_SIZE && !overPit) { player.y = GROUND_Y - PLAYER_SIZE; player.vy = 0; player.jumps = 0; }
+      if (player.y > GAME_HEIGHT + 30) { finish(false); return; }
       player.shield = Math.max(0, player.shield - 1);
       player.invincible = Math.max(0, player.invincible - 1);
 
       if (frame - lastSpawn > Math.max(46, 90 - clearedObstacles * 0.18)) {
         lastSpawn = frame;
-        const roll = Math.random();
-        const type = roll < .18 ? "laser" : roll < .42 ? "drone" : roll < .75 ? "barrier" : "sign";
-        const dimensions = {
-          laser: { w: 58, h: 20 },
-          drone: { w: 34, h: 76 },
-          barrier: { w: 42, h: 38 },
-          sign: { w: 27, h: 62 }
-        }[type];
-        obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type });
-        if (Math.random() < .58) items.push({ x: GAME_WIDTH + 65, y: 150 + Math.random() * 75, shield: Math.random() < .17 });
+        const spawnPit = clearedObstacles >= 4 && Math.random() < .17;
+        if (spawnPit) {
+          const pitWidth = 92 + Math.random() * 48;
+          pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
+          if (Math.random() < .72) items.push({ x: GAME_WIDTH + 30 + pitWidth / 2, y: GROUND_Y - 82, kind: Math.random() < .5 ? "coin" : "star" });
+        } else {
+          const roll = Math.random();
+          const type = roll < .18 ? "laser" : roll < .42 ? "drone" : roll < .75 ? "barrier" : "sign";
+          const dimensions = {
+            laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
+          }[type];
+          obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type });
+          if (Math.random() < .62) {
+            const itemRoll = Math.random();
+            const kind = itemRoll < .15 ? "shield" : itemRoll < .58 ? "coin" : "star";
+            items.push({ x: GAME_WIDTH + 65, y: 150 + Math.random() * 75, kind });
+          }
+        }
       }
 
       for (let i = obstacles.length - 1; i >= 0; i -= 1) {
@@ -471,8 +491,13 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         const item = items[i]; item.x -= speed;
         if (item.x < 0) { items.splice(i, 1); continue; }
         if (overlap(58, 106, item.x - 12, item.x + 12) && overlap(player.y, player.y + PLAYER_SIZE, item.y - 12, item.y + 12)) {
-          if (item.shield) player.shield = 520;
-          else { player.invincible = Math.max(player.invincible, 30); }
+          if (item.kind === "shield") player.shield = 520;
+          else {
+            bonusJumps += 5;
+            setReward(bonusJumps);
+            const { myCharacter: char, onAddJumps: add } = propsRef.current;
+            if (char) add(char.id, 5);
+          }
           items.splice(i, 1);
         }
       }
@@ -487,10 +512,18 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       }
       ctx.globalAlpha = 1; ctx.fillStyle = "#1d1742"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
       ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
+      pits.forEach((pit) => {
+        const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
+        abyss.addColorStop(0, "#02020b"); abyss.addColorStop(1, "#16051d");
+        ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
+        ctx.strokeStyle = "#ff62c0"; ctx.lineWidth = 3; ctx.beginPath();
+        ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
+        ctx.moveTo(pit.x + pit.w, GROUND_Y); ctx.lineTo(pit.x + pit.w, GAME_HEIGHT); ctx.stroke();
+      });
       
       items.forEach((item) => { 
         ctx.font = "26px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(item.shield ? "🛡️" : "✦", item.x, item.y); 
+        ctx.fillText(item.kind === "shield" ? "🛡️" : item.kind === "coin" ? "🪙" : "⭐", item.x, item.y); 
       });
       
       obstacles.forEach((o) => {
@@ -512,6 +545,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.fillStyle = "#0c0c23"; ctx.fillRect(18, 15, 220, 44); ctx.strokeStyle = "#5de4ff"; ctx.strokeRect(18, 15, 220, 44);
       ctx.fillStyle = "#fff"; ctx.font = "bold 18px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.fillText(`RUN  ${String(clearedObstacles).padStart(3, "0")} / ${RUN_GOAL}`, 30, 43);
+      if (bonusJumps > 0) { ctx.fillStyle = "#ffd45f"; ctx.font = "bold 13px monospace"; ctx.fillText(`ITEM +${bonusJumps} JUMP`, 30, 57); }
       
       frameRef.current = requestAnimationFrame(loop);
     };
@@ -561,6 +595,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
                 <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} JUMP 획득</p>
+                <p className="text-xs text-[#ffd45f] mt-1">⭐·🪙 아이템 획득 시 즉시 +5 JUMP</p>
+                <p className="text-xs text-[#ff8bd0] mt-1">중간중간 등장하는 구덩이도 조심하세요!</p>
                 <p className="text-xs text-[#ffd45f] mt-1">공중 레이저 주의! 때로는 뛰지 않아야 안전해요.</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
               </div>
@@ -632,7 +668,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     }
   }, [isOpen]);
 
-  const ROOF_GOAL = 1000;
+  const DIFFICULTY_ALTITUDE = 1500;
   const GAME_WIDTH = 420;
   const GAME_HEIGHT = 610;
   const PLAYER_SIZE = 42;
@@ -678,8 +714,8 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
     // 모든 고도에서 같은 공식으로 계산해 초반/중반 발판 크기가 역전되지 않게 한다.
     const getPlatformWidth = (altitude) => {
-      const difficulty = Math.min(1, Math.max(0, altitude) / ROOF_GOAL);
-      return 145 - (145 - 45) * Math.pow(difficulty, 1.05);
+      const difficulty = Math.min(1, Math.max(0, altitude) / DIFFICULTY_ALTITUDE);
+      return 145 - (145 - 50) * Math.pow(difficulty, 1.05);
     };
     
     // 발판 초기 세팅 (시작할 땐 무조건 넓고 촘촘하게!)
@@ -706,8 +742,8 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       
       const highestY = platforms[platforms.length - 1].y;
       const heightFromStart = Math.max(0, (GAME_HEIGHT - 20) - highestY);
-      const estimatedAltitude = Math.min(ROOF_GOAL, heightFromStart / PIXELS_PER_METER);
-      const difficulty = Math.min(1, estimatedAltitude / ROOF_GOAL);
+      const estimatedAltitude = heightFromStart / PIXELS_PER_METER;
+      const difficulty = Math.min(1, estimatedAltitude / DIFFICULTY_ALTITUDE);
       
       // 발판 간격
       const minGap = 52 + difficulty * 20;
@@ -715,7 +751,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       const gap = minGap + randomGap;
 
       lastY = highestY - gap;
-      const nextAltitude = Math.min(ROOF_GOAL, Math.max(0, ((GAME_HEIGHT - 20) - lastY) / PIXELS_PER_METER));
+      const nextAltitude = Math.max(0, ((GAME_HEIGHT - 20) - lastY) / PIXELS_PER_METER);
       const width = getPlatformWidth(nextAltitude);
       lastX = Math.max(8, Math.min(GAME_WIDTH - width - 8, Math.random() * (GAME_WIDTH - width)));
 
@@ -746,12 +782,12 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     window.addEventListener('keydown', keyDown); 
     window.addEventListener('keyup', keyUp);
     
-    const finish = (cleared) => { 
+    const finish = () => { 
       if (done) return; 
       done = true; 
-      stateRef.current = cleared ? 'SUCCESS' : 'GAMEOVER'; 
+      stateRef.current = 'GAMEOVER'; 
       setGameState(stateRef.current); 
-      const earned = cleared ? 2000 : Math.max(10, Math.floor(best / 2));
+      const earned = Math.max(10, Math.floor(best / 2));
       setFinalScore(best);
       setReward(earned);
       
@@ -781,16 +817,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-        let stageText = "지하 그라운드 (GROUND)";
-        if (alt >= 800) stageText = "우주 (SPACE)";
-        else if (alt >= 500) stageText = "성층권 (STRATOSPHERE)";
-        else if (alt >= 200) stageText = "하늘 (SKY)";
-
-        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
-        ctx.font = "bold 32px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(stageText, GAME_WIDTH / 2, GAME_HEIGHT / 2);
     };
 
     const loop = () => {
@@ -803,7 +829,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       
       platforms.forEach((p) => { 
         if (p.type === "moving") { 
-          const moveSpeed = 1.1 + Math.min(1, Math.max(0, (GAME_HEIGHT - p.y) / PIXELS_PER_METER) / ROOF_GOAL) * 1.5;
+          const moveSpeed = 1.1 + Math.min(1, Math.max(0, (GAME_HEIGHT - p.y) / PIXELS_PER_METER) / DIFFICULTY_ALTITUDE) * 1.5;
           p.x += p.dir * moveSpeed; 
           if (p.x < 0 || p.x + p.w > GAME_WIDTH) p.dir *= -1; 
         } 
@@ -826,8 +852,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
       best = Math.max(best, Math.floor(Math.max(0, -camera / PIXELS_PER_METER)));
       if (best !== reported) { reported = best; setScore(best); }
-      if (best >= ROOF_GOAL) { finish(true); return; }
-      if (player.y > camera + GAME_HEIGHT + 60) { finish(false); return; }
+      if (player.y > camera + GAME_HEIGHT + 60) { finish(); return; }
 
       drawBackground(ctx, best);
       
@@ -841,7 +866,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       
       ctx.fillStyle = "rgba(6,8,28,.85)"; ctx.fillRect(12, 14, 215, 44); ctx.strokeStyle = "#5de4ff"; ctx.strokeRect(12, 14, 215, 44);
       ctx.fillStyle = "#fff"; ctx.font = "bold 18px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillText(`ALT ${String(best).padStart(4, "0")}M / 1000M`, 24, 43);
+      ctx.fillText(`ALT ${String(best).padStart(4, "0")}M / ∞`, 24, 43);
       
       frameRef.current = requestAnimationFrame(loop);
     };
@@ -905,7 +930,8 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
             {gameState === 'READY' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white pointer-events-none">
                 <h2 className="text-3xl font-bold mb-1 text-[#5de4ff]" style={{ textShadow: "0 0 14px #5de4ff" }}>READY?</h2>
-                <p className="font-bold text-white mt-2">목표: 1000m 우주 돌파</p>
+                <p className="font-bold text-white mt-2">목표: 끝없이 올라가는 무한 모드</p>
+                <p className="text-xs text-[#5de4ff] mt-1">1000m · 2000m · 3000m 그 이상까지!</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 좌/우 터치로 이동</p>
               </div>
             )}
@@ -919,22 +945,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
                 <div className="flex gap-2">
                    <button onClick={start} className="win95-button !bg-[#e9ecff] !border-white !text-[#09091b] !shadow-[3px_3px_#454363] py-2 px-4 font-bold">TRY AGAIN</button>
                    <button onClick={onClose} className="win95-button py-2 px-4">종료</button>
-                </div>
-              </div>
-            )}
-            {gameState === 'SUCCESS' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white z-10">
-                <h2 className="text-3xl font-bold mb-1 text-[#5de4ff]" style={{ textShadow: "0 0 14px #5de4ff" }}>MISSION COMPLETE!</h2>
-                <p className="text-xl mb-3 font-bold text-white">+{reward} JUMP 대량 획득!</p>
-                <div className="flex gap-2 mt-2 w-3/4 flex-col">
-                  <button onClick={(e) => {
-                      e.stopPropagation();
-                      const text = `내 ${myCharacter.name}이(가) KSPO 지붕 뚫고 우주 돌파! 🚀 +${reward}점 획득!`;
-                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
-                    }}
-                    className="win95-button py-2 px-4 font-bold !bg-[#e9ecff] !text-[#09091b] !border-white !shadow-[3px_3px_#454363] w-full"
-                  >𝕏 자랑하기</button>
-                  <button onClick={onClose} className="win95-button py-2 px-4 w-full">닫기</button>
                 </div>
               </div>
             )}
