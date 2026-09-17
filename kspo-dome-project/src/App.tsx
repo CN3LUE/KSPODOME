@@ -402,10 +402,11 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const obstacles = [];
     const pits = [];
     const items = [];
-    let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0;
+    let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0, fellIntoPit = false;
     let lastItemSpawn = 0, nextItemDelay = 360 + Math.random() * 180, done = false;
 
     const jump = () => {
+      if (fellIntoPit) return;
       if (player.jumps < 2) { player.vy = player.jumps === 0 ? -15.5 : -13; player.jumps += 1; }
     };
     
@@ -463,7 +464,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       player.vy += 0.78;
       player.y += player.vy;
       const overPit = pits.some(pit => overlap(66, 98, pit.x + 3, pit.x + pit.w - 3));
-      if (player.y >= GROUND_Y - PLAYER_SIZE && !overPit) { player.y = GROUND_Y - PLAYER_SIZE; player.vy = 0; player.jumps = 0; }
+      if (!fellIntoPit && overPit && player.vy >= 0 && player.y + PLAYER_SIZE >= GROUND_Y - 2) fellIntoPit = true;
+      if (player.y >= GROUND_Y - PLAYER_SIZE && !overPit && !fellIntoPit) { player.y = GROUND_Y - PLAYER_SIZE; player.vy = 0; player.jumps = 0; }
       if (player.y > GAME_HEIGHT + 30) { finish(false); return; }
       player.shield = Math.max(0, player.shield - 1);
       player.invincible = Math.max(0, player.invincible - 1);
@@ -2063,6 +2065,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                         className="win95-button text-[10px] py-0 px-2 bg-black text-white no-underline"
                       >𝕏 Share</a>
