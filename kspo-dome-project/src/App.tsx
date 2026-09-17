@@ -524,13 +524,6 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
         abyss.addColorStop(0, "#050006"); abyss.addColorStop(1, "#6b0039");
         ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
-        ctx.save();
-        ctx.beginPath(); ctx.rect(pit.x, GROUND_Y, pit.w, GAME_HEIGHT - GROUND_Y); ctx.clip();
-        ctx.globalAlpha = .55; ctx.strokeStyle = "#ff4fa3"; ctx.lineWidth = 5;
-        for (let stripeX = pit.x - 80; stripeX < pit.x + pit.w + 80; stripeX += 25) {
-          ctx.beginPath(); ctx.moveTo(stripeX, GROUND_Y + 2); ctx.lineTo(stripeX + 70, GAME_HEIGHT); ctx.stroke();
-        }
-        ctx.restore();
         ctx.shadowColor = "#ff2f8b"; ctx.shadowBlur = 12;
         ctx.strokeStyle = "#ff77bd"; ctx.lineWidth = 5; ctx.beginPath();
         ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
