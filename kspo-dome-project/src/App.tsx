@@ -1026,6 +1026,7 @@ export default function App() {
   const positionSaveTimersRef = useRef(new Map());
   const positionOverridesRef = useRef(new Map());
   const presetPositionsRef = useRef({});
+  const restBoundarySaveRef = useRef(new Set());
   const worldCharactersRef = useRef([]);
   const chatOwnerKey = useMemo(() => Array.from(new Set(
     worldCharacters.filter(character => character.isUser && character.ownerUid).map(character => character.ownerUid)
@@ -1153,8 +1154,25 @@ export default function App() {
         return { ...serverCharacter, x: localPosition.x, y: localPosition.y, cellId: localPosition.cellId };
       });
       setWorldCharacters(previousCharacters => {
+        const stableSharedCharacters = sharedCharacters.map(serverCharacter => {
+          const localCharacter = previousCharacters.find(character => character.id === serverCharacter.id);
+          if (
+            serverCharacter.id === myCharacterId
+            && localCharacter
+            && (localCharacter.updatedAtMs || 0) > ((serverCharacter as any).updatedAtMs || 0)
+          ) {
+            return {
+              ...serverCharacter,
+              jumpsCount: localCharacter.jumpsCount,
+              restUntil: localCharacter.restUntil,
+              lastRestBoundary: localCharacter.lastRestBoundary,
+              updatedAtMs: localCharacter.updatedAtMs
+            };
+          }
+          return serverCharacter;
+        });
         const myPreviousCharacter = previousCharacters.find(character => character.id === myCharacterId);
-        const hasMyCharacter = sharedCharacters.some(character => character.id === myCharacterId);
+        const hasMyCharacter = stableSharedCharacters.some(character => character.id === myCharacterId);
         const presetCharacters = PRESET_CHARACTERS.map(character => {
           const saved = presetPositionsRef.current[character.id];
           return saved ? { ...character, x: saved.x, y: saved.y } : character;
@@ -1162,11 +1180,11 @@ export default function App() {
         const pendingCharacters = previousCharacters.filter(character =>
           !character.id.startsWith('preset-')
           && positionOverridesRef.current.has(character.id)
-          && !sharedCharacters.some(shared => shared.id === character.id)
+          && !stableSharedCharacters.some(shared => shared.id === character.id)
         );
         return [
           ...presetCharacters,
-          ...sharedCharacters,
+          ...stableSharedCharacters,
           ...(myPreviousCharacter && !hasMyCharacter ? [myPreviousCharacter] : []),
           ...pendingCharacters.filter(character => character.id !== myCharacterId)
         ];
@@ -1229,16 +1247,35 @@ export default function App() {
       setWorldCharacters(prev => prev.map(c => {
         if (c.restUntil && now < c.restUntil) return c;
 
-        const nextJumps = (c.jumpsCount || 0) + 1;
-        return {
+        let nextJumps = (c.jumpsCount || 0) + 1;
+        if (nextJumps % 50 === 0 && c.lastRestBoundary === nextJumps) nextJumps += 1;
+        const startsRest = nextJumps % 50 === 0;
+        const changes = {
           ...c,
           jumpsCount: nextJumps,
-          restUntil: nextJumps % 50 === 0 ? now + 10000 : null
+          restUntil: startsRest ? now + 10000 : null,
+          lastRestBoundary: startsRest ? nextJumps : c.lastRestBoundary,
+          updatedAtMs: now
         };
+        if (startsRest && c.id === myCharacterId && !c.id.startsWith('preset-')) {
+          const saveKey = `${c.id}:${nextJumps}`;
+          if (!restBoundarySaveRef.current.has(saveKey)) {
+            restBoundarySaveRef.current.add(saveKey);
+            window.setTimeout(() => {
+              updateDoc(doc(firebaseDb, 'characters', c.id), {
+                jumpsCount: nextJumps,
+                restUntil: changes.restUntil,
+                lastRestBoundary: nextJumps,
+                updatedAtMs: now
+              }).catch(() => restBoundarySaveRef.current.delete(saveKey));
+            }, 0);
+          }
+        }
+        return changes;
       }));
     }, 1000);
     return () => clearInterval(interval);
-  }, [step]);
+  }, [step, myCharacterId]);
 
   useEffect(() => {
     if (currentCapacity >= MAX_CAPACITY) setIsFull(true);
@@ -1371,7 +1408,7 @@ export default function App() {
       if (stopAtRestBoundary) {
         const nextRestBoundary = (Math.floor(currentJumps / 50) + 1) * 50;
         if (requestedJumps >= nextRestBoundary) {
-          savedChanges = { jumpsCount: nextRestBoundary, restUntil: now + 10000, updatedAtMs: now };
+          savedChanges = { jumpsCount: nextRestBoundary, restUntil: now + 10000, lastRestBoundary: nextRestBoundary, updatedAtMs: now };
           return { ...c, ...savedChanges };
         }
       }
