@@ -18,7 +18,7 @@ const globalStyles = `
   }
 
   body {
-    background-color: #303030;
+    background-color: #808080;
     color: var(--win-text);
     overflow: hidden;
     font-family: 'DungGeunMo', 'MS Sans Serif', Tahoma, sans-serif;
@@ -293,8 +293,8 @@ const generatePresets = (count) => {
 
     return {
       id: 'preset-' + i,
-      name: names[i % names.length] + '_' + i.toString().padStart(3, '0'),
-      emoji: emojis[i % emojis.length],
+      name: names[Math.floor(seededUnit(i * 83 + 19) * names.length)] + '_' + i.toString().padStart(3, '0'),
+      emoji: emojis[Math.floor(seededUnit(i * 97 + 43) * emojis.length)],
       imageUrl: null,
       hasItem: i % 2 === 0,
       x: 70 + (column + 0.15 + seededUnit(i * 2 + 1) * 0.7) * cellWidth,
@@ -950,7 +950,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 }
 
 export default function App() {
-  const [appHeight, setAppHeight] = useState(() => typeof window === 'undefined' ? 800 : window.innerHeight);
   const [step, setStep] = useState(1);
   const [characterName, setCharacterName] = useState('');
   const [characterImage, setCharacterImage] = useState(null);
@@ -979,37 +978,6 @@ export default function App() {
 
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
-  }, []);
-
-  // iOS Safari가 키보드를 닫은 뒤에도 줄어든 높이를 유지하는 현상을 보정합니다.
-  useEffect(() => {
-    const updateAppHeight = () => {
-      const nextHeight = window.visualViewport?.height || window.innerHeight;
-      setAppHeight(Math.round(nextHeight));
-    };
-    const refreshAfterKeyboard = () => {
-      updateAppHeight();
-      window.setTimeout(updateAppHeight, 120);
-      window.setTimeout(updateAppHeight, 350);
-      window.setTimeout(updateAppHeight, 700);
-    };
-
-    updateAppHeight();
-    window.addEventListener('resize', updateAppHeight);
-    window.addEventListener('orientationchange', refreshAfterKeyboard);
-    window.addEventListener('pageshow', refreshAfterKeyboard);
-    document.addEventListener('focusout', refreshAfterKeyboard);
-    window.visualViewport?.addEventListener('resize', updateAppHeight);
-    window.visualViewport?.addEventListener('scroll', updateAppHeight);
-
-    return () => {
-      window.removeEventListener('resize', updateAppHeight);
-      window.removeEventListener('orientationchange', refreshAfterKeyboard);
-      window.removeEventListener('pageshow', refreshAfterKeyboard);
-      document.removeEventListener('focusout', refreshAfterKeyboard);
-      window.visualViewport?.removeEventListener('resize', updateAppHeight);
-      window.visualViewport?.removeEventListener('scroll', updateAppHeight);
-    };
   }, []);
 
   // Firebase 로그인 상태와 서버에서 발급된 admin Custom Claim을 확인합니다.
@@ -1335,7 +1303,7 @@ export default function App() {
   const fillPercentage = ((currentCapacity / MAX_CAPACITY) * 100).toFixed(1);
 
   return (
-    <div className="w-full flex flex-col font-sans overflow-hidden bg-[#808080] text-black" style={{ height: `${appHeight}px` }}>
+    <div className="fixed top-0 left-0 w-full h-[100lvh] flex flex-col font-sans overflow-hidden bg-[#808080] text-black">
       <style>{globalStyles}</style>
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
