@@ -429,15 +429,23 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     };
 
     const drawAvatar = (ctx, x, y, size) => {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.filter = "none";
+      ctx.shadowColor = "rgba(0,0,0,0)";
+      ctx.shadowBlur = 0;
       if (playerImgRef.current) {
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(playerImgRef.current, x, y, size, size);
       } else {
+        ctx.fillStyle = "#ffffff";
         ctx.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(propsRef.current.myCharacter?.emoji || '😎', x + size / 2, y + size / 2);
       }
+      ctx.restore();
     };
 
     const loop = () => {
@@ -520,6 +528,11 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       }
       if (clearedObstacles >= RUN_GOAL) { clearedObstacles = RUN_GOAL; setScore(clearedObstacles); finish(true); return; }
 
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.filter = "none";
+      ctx.shadowColor = "rgba(0,0,0,0)";
+      ctx.shadowBlur = 0;
       const sky = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT); 
       sky.addColorStop(0, "#090f2e"); sky.addColorStop(1, "#31174b");
       ctx.fillStyle = sky; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -530,6 +543,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.globalAlpha = 1; ctx.fillStyle = "#514579"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
       ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
       pits.forEach((pit) => {
+        ctx.save();
         const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
         abyss.addColorStop(0, "#050006"); abyss.addColorStop(1, "#6b0039");
         ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
@@ -537,12 +551,16 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         ctx.strokeStyle = "#ff77bd"; ctx.lineWidth = 5; ctx.beginPath();
         ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
         ctx.moveTo(pit.x + pit.w, GROUND_Y); ctx.lineTo(pit.x + pit.w, GAME_HEIGHT); ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.restore();
       });
       
       items.forEach((item) => { 
-        ctx.font = "26px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.save();
+        ctx.globalAlpha = 1; ctx.filter = "none"; ctx.shadowColor = "rgba(0,0,0,0)"; ctx.shadowBlur = 0;
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "26px \"Apple Color Emoji\", \"Segoe UI Emoji\", sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(item.kind === "shield" ? "🛡️" : "⭐", item.x, item.y); 
+        ctx.restore();
       });
       
       obstacles.forEach((o) => {
@@ -551,10 +569,11 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         if (o.type === "sign") { ctx.fillStyle = "#55e2ff"; ctx.fillRect(o.x + 10, y, 7, o.h); ctx.fillStyle = "#fff"; ctx.fillRect(o.x, y, o.w, 23); }
         if (o.type === "drone") { ctx.fillStyle = "#ff62c0"; ctx.fillRect(o.x, y + 11, o.w, 17); ctx.fillStyle = "#b6f6ff"; ctx.fillRect(o.x + 8, y + 15, o.w - 16, 5); }
         if (o.type === "laser") {
+          ctx.save();
           ctx.fillStyle = "#3b174e"; ctx.fillRect(o.x, y, 8, o.h); ctx.fillRect(o.x + o.w - 8, y, 8, o.h);
           ctx.shadowColor = "#ff2f8b"; ctx.shadowBlur = 10;
           ctx.fillStyle = "#ff2f8b"; ctx.fillRect(o.x + 8, y + 8, o.w - 16, 4);
-          ctx.shadowBlur = 0;
+          ctx.restore();
         }
       });
       
@@ -614,7 +633,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
                 <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} 에바뛰 획득</p>
-                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 에바뛰 </p>
+                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 에바뛰</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
               </div>
             )}
@@ -638,13 +657,13 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <p className="text-xl mb-3 font-bold text-[#5de4ff]">+{reward.toLocaleString()} 에바뛰 획득</p>
                 <div className="flex gap-2 mt-2">
                   <button onClick={onClose} className="win95-button py-2 px-4">확인</button>
-                  <button onClick={(e) => {
-                      e.stopPropagation();
-                      const text = `내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`;
-                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
-                    }}
+                  <a
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="win95-button py-2 px-4 font-bold !bg-[#e9ecff] !text-[#09091b] !border-white !shadow-[3px_3px_#454363]"
-                  >𝕏 자랑하기</button>
+                  >𝕏 자랑하기</a>
                 </div>
               </div>
             )}
@@ -2040,7 +2059,13 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         className={`win95-button text-[10px] py-0 px-2 ${isResting ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         {isResting ? '휴식중..' : isFever ? '+5 👆' : '+1 👆'}
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); const url = window.location.href; window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${url} #에바뛰 #EVERYBODY_JUMP`)}`, '_blank'); }} className="win95-button text-[10px] py-0 px-2 bg-black text-white">𝕏 Share</button>
+                      <a
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="win95-button text-[10px] py-0 px-2 bg-black text-white no-underline"
+                      >𝕏 Share</a>
                     </div>
                   )}
                 </div>
