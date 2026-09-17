@@ -494,7 +494,10 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         o.x -= speed;
         const y = o.type === "laser" ? 185 : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
         if (o.x + o.w < 0) { obstacles.splice(i, 1); clearedObstacles += 1; setScore(clearedObstacles); continue; }
-        const collision = overlap(67, 97, o.x + 4, o.x + o.w - 4) && overlap(player.y + 7, player.y + PLAYER_SIZE - 5, y + 4, y + o.h - 2);
+        const collisionTop = o.type === "drone" ? y + 11 : y + 4;
+        const collisionBottom = o.type === "drone" ? y + 28 : y + o.h - 2;
+        const collision = overlap(67, 97, o.x + 4, o.x + o.w - 4)
+          && overlap(player.y + 7, player.y + PLAYER_SIZE - 5, collisionTop, collisionBottom);
         if (collision && player.invincible === 0) {
           if (player.shield > 0) { player.shield = 0; player.invincible = 45; obstacles.splice(i, 1); }
           else { finish(false); return; }
@@ -1747,6 +1750,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (!searchTerm) return characters;
     return characters.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [characters, searchTerm]);
+  const myCharacter = useMemo(
+    () => characters.find(character => character.id === myCharacterId && character.isUser),
+    [characters, myCharacterId]
+  );
+  const hasMyCharacter = Boolean(myCharacter);
 
   const handlePointerDown = (e) => {
     if (draggingCharId) return;
@@ -1850,7 +1858,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
   const findMyCharacter = () => {
     if (!myCharacterId) return;
-    const myChar = characters.find(c => c.id === myCharacterId);
+    const myChar = myCharacter;
     if (myChar) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -1881,15 +1889,15 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             </button>
           )}
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
-          {myCharacterId && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
-          {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
-          {myCharacterId && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
+          {hasMyCharacter && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
+          {hasMyCharacter && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
+          {hasMyCharacter && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
           <div className="flex gap-1 ml-2 border-l border-[var(--win-border-dark)] pl-2">
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale + 0.2}))} className="win95-button">+</button>
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
           </div>
         </div>
-        {myCharacterId && (
+        {hasMyCharacter && (
           <form onSubmit={handleChatSubmit} className="flex items-center gap-1 w-full sm:w-auto">
             <input
               type="text"
@@ -2049,8 +2057,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         <span>배율: {Math.round(transform.scale * 100)}%</span>
       </div>
 
-      {myCharacterId && <MiniGameRun isOpen={isRunGameOpen} onClose={() => setIsRunGameOpen(false)} myCharacter={characters.find(c => c.id === myCharacterId)} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
-      {myCharacterId && <MiniGameRoofBreaker isOpen={isRoofGameOpen} onClose={() => setIsRoofGameOpen(false)} myCharacter={characters.find(c => c.id === myCharacterId)} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
+      {hasMyCharacter && <MiniGameRun isOpen={isRunGameOpen} onClose={() => setIsRunGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
+      {hasMyCharacter && <MiniGameRoofBreaker isOpen={isRoofGameOpen} onClose={() => setIsRoofGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
     </div>
   );
 }
