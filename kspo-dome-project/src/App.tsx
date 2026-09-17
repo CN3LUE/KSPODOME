@@ -1880,9 +1880,18 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                 }}
               >
                 {showChat && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[90] max-w-[180px] min-w-[52px] rounded-lg border-2 border-black bg-white px-2 py-1 text-center text-[12px] leading-tight font-bold text-black shadow-[2px_2px_0_rgba(0,0,0,0.45)] whitespace-normal break-words pointer-events-none">
-                    {chatMessage.text}
-                    <span className="absolute left-1/2 top-full -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-black"></span>
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 z-[90] pointer-events-none"
+                    style={{ bottom: `calc(100% + ${8 / transform.scale}px)` }}
+                  >
+                    <div
+                      className="relative w-max max-w-[190px] min-w-[90px] rounded-[5px] border border-[#8d8d8d] bg-[#fffef5] px-3 py-2 text-center text-[13px] leading-[1.35] font-normal text-[#252525] shadow-[1px_2px_0_rgba(0,0,0,0.18)] whitespace-normal break-words"
+                      style={{ transform: `scale(${1 / transform.scale})`, transformOrigin: 'bottom center', fontFamily: "'DungGeunMo', monospace" }}
+                    >
+                      {chatMessage.text}
+                      <span className="absolute left-[22px] top-full w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[8px] border-t-[#8d8d8d]"></span>
+                      <span className="absolute left-[23px] top-full -mt-[1px] w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-[#fffef5]"></span>
+                    </div>
                   </div>
                 )}
                 <div className="relative" id={`char-wrapper-${char.id}`}>
