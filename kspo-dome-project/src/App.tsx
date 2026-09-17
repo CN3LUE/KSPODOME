@@ -1255,16 +1255,19 @@ export default function App() {
   };
 
   const handleUpdateCharacterPosition = useCallback((id, newX, newY) => {
+    if (!isAdmin && id !== myCharacterId) return;
     setWorldCharacters(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
     if (id.startsWith('preset-')) return;
     const oldTimer = positionSaveTimersRef.current.get(id);
     if (oldTimer) window.clearTimeout(oldTimer);
     const timer = window.setTimeout(() => {
-      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId: getCellId(newX, newY), updatedAtMs: Date.now() }).catch(() => {});
+      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId: getCellId(newX, newY), updatedAtMs: Date.now() }).catch(() => {
+        showModal('위치 저장 실패', 'Firestore에서 관리자 위치 변경 권한을 확인해 주세요.', null, false);
+      });
       positionSaveTimersRef.current.delete(id);
     }, 250);
     positionSaveTimersRef.current.set(id, timer);
-  }, []);
+  }, [isAdmin, myCharacterId, showModal]);
 
   const handleDeleteCharacter = useCallback(async (id) => {
     if (!isAdmin && id !== myCharacterId) return;
@@ -1601,6 +1604,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredChar, setHoveredChar] = useState(null);
   const [draggingCharId, setDraggingCharId] = useState(null);
+  const [isPositionEditMode, setIsPositionEditMode] = useState(false);
 
   const [clickCounts, setClickCounts] = useState({});
   const [feverStates, setFeverStates] = useState({});
@@ -1809,6 +1813,15 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           <div className="flex items-center gap-1 ml-2"><span className="text-xs">찾기:</span><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="win95-input w-24 sm:w-32" /></div>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
+          {isAdmin && (
+            <button
+              onClick={() => setIsPositionEditMode(previous => !previous)}
+              className={`win95-button font-bold border ${isPositionEditMode ? 'text-white bg-[#000080] border-[#000080]' : 'text-[#000080] border-[#000080]'}`}
+              aria-pressed={isPositionEditMode}
+            >
+              위치 편집 {isPositionEditMode ? 'ON' : 'OFF'}
+            </button>
+          )}
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {myCharacterId && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
           {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
@@ -1845,6 +1858,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         onWheel={handleWheel}
         style={{ touchAction: 'none' }}
       >
+        {isAdmin && isPositionEditMode && (
+          <div className="absolute left-2 top-2 z-[100] bg-[#ffffcc] border-2 border-black px-2 py-1 text-xs font-bold shadow-[2px_2px_0_#000] pointer-events-none">
+            위치 편집 중 · 캐릭터를 드래그해서 옮겨주세요
+          </div>
+        )}
         <div className="relative bg-grid origin-top-left" style={{ width: `${WORLD_SIZE}px`, height: `${WORLD_SIZE}px`, transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, willChange: 'transform' }}>
           
           <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
@@ -1853,7 +1871,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
           {filteredChars.map((char) => {
             const isMine = char.id === myCharacterId;
-            const canEdit = isMine || isAdmin;
+            const canEdit = isMine || (isAdmin && isPositionEditMode);
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
             const chatMessage = char.ownerUid ? chatMessages[char.ownerUid] : null;
