@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, getCountFromServer, getDocs, getFirestore, limit, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getCountFromServer, getDoc, getDocs, getFirestore, limit, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap');
@@ -196,6 +196,12 @@ const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 const firebaseDb = getFirestore(firebaseApp);
 const IS_ADMIN_PAGE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1';
+
+const hasAdminAccess = async (user) => {
+  if (!user || !IS_ADMIN_PAGE) return false;
+  const adminSnapshot = await getDoc(doc(firebaseDb, 'admins', user.uid));
+  return adminSnapshot.exists() && adminSnapshot.data()?.active === true;
+};
 
 const sliceEmojiString = (str, limit) => {
   const chars = [...new Intl.Segmenter().segment(str)].map(x => x.segment);
@@ -1004,7 +1010,7 @@ export default function App() {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
   }, []);
 
-  // Firebase 로그인 상태와 서버에서 발급된 admin Custom Claim을 확인합니다.
+  // Firebase 로그인 상태와 Firestore admins 문서를 확인합니다.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       if (!user) {
@@ -1028,8 +1034,7 @@ export default function App() {
       }
 
       try {
-        const tokenResult = await user.getIdTokenResult();
-        setIsAdmin(IS_ADMIN_PAGE && tokenResult.claims.admin === true);
+        setIsAdmin(await hasAdminAccess(user));
       } catch {
         setIsAdmin(false);
       } finally {
@@ -1052,9 +1057,7 @@ export default function App() {
 
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, adminEmail.trim(), adminPassword);
-      const tokenResult = await credential.user.getIdTokenResult(true);
-
-      if (tokenResult.claims.admin !== true) {
+      if (!(await hasAdminAccess(credential.user))) {
         await signOut(firebaseAuth);
         setAdminLoginError('관리자 권한이 없는 계정입니다.');
         return;
