@@ -613,10 +613,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white pointer-events-none">
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
-                <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} JUMP 획득</p>
-                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 JUMP · 🛡️ 실드</p>
-                <p className="text-xs text-[#ff8bd0] mt-1">중간중간 등장하는 구덩이도 조심하세요!</p>
-                <p className="text-xs text-[#ffd45f] mt-1">공중 레이저 주의! 때로는 뛰지 않아야 안전해요.</p>
+                <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} 에바뛰 획득</p>
+                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 에바뛰 </p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
               </div>
             )}
@@ -624,7 +622,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white">
                 <h2 className="text-3xl font-bold mb-2 text-[#ff5a61]" style={{ textShadow: "0 0 14px #ff5a61" }}>GAME OVER</h2>
                 <div className="mb-4 text-sm flex flex-col items-center gap-1 font-bold">
-                   <p className="text-white text-lg">+{reward.toLocaleString()} JUMP 획득</p>
+                   <p className="text-white text-lg">+{reward.toLocaleString()} 에바뛰 획득</p>
                    <p className="text-[#ff62c0]">통과한 장애물: {finalScore}개</p>
                 </div>
                 <div className="flex gap-2">
@@ -637,12 +635,12 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white z-10">
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>MISSION COMPLETE!</h2>
                 <p className="text-lg font-bold text-white">장애물 {finalScore}개 통과!</p>
-                <p className="text-xl mb-3 font-bold text-[#5de4ff]">+{reward.toLocaleString()} JUMP 획득</p>
+                <p className="text-xl mb-3 font-bold text-[#5de4ff]">+{reward.toLocaleString()} 에바뛰 획득</p>
                 <div className="flex gap-2 mt-2">
                   <button onClick={onClose} className="win95-button py-2 px-4">확인</button>
                   <button onClick={(e) => {
                       e.stopPropagation();
-                      const text = `내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} JUMP 획득! 🏃‍♂️💨`;
+                      const text = `내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`;
                       window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
                     }}
                     className="win95-button py-2 px-4 font-bold !bg-[#e9ecff] !text-[#09091b] !border-white !shadow-[3px_3px_#454363]"
