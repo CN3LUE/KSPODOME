@@ -964,6 +964,7 @@ export default function App() {
   const [adminLoginLoading, setAdminLoginLoading] = useState(false);
   
   const [worldCharacters, setWorldCharacters] = useState([]);
+  const [chatMessages, setChatMessages] = useState({});
   const [myCharacterId, setMyCharacterId] = useState(null);
   const [viewportCell, setViewportCell] = useState({ x: 2, y: 2 });
   const [currentCapacity, setCurrentCapacity] = useState(INITIAL_FILL);
@@ -975,6 +976,9 @@ export default function App() {
   const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null, showCancel: false });
   const positionSaveTimersRef = useRef(new Map());
   const worldCharactersRef = useRef([]);
+  const chatOwnerKey = useMemo(() => Array.from(new Set(
+    worldCharacters.filter(character => character.isUser && character.ownerUid).map(character => character.ownerUid)
+  )).sort().slice(0, 40).join('|'), [worldCharacters]);
 
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
@@ -1104,6 +1108,34 @@ export default function App() {
       })
       .catch(() => {});
   }, [authReady]);
+
+  // 현재 화면에 보이는 실제 사용자 캐릭터의 작은 채팅 문서만 구독합니다.
+  useEffect(() => {
+    if (!authReady || !firebaseAuth.currentUser || !chatOwnerKey) {
+      setChatMessages({});
+      return;
+    }
+
+    const ownerUids = chatOwnerKey.split('|').filter(Boolean);
+    setChatMessages(previous => Object.fromEntries(
+      Object.entries(previous).filter(([ownerUid]) => ownerUids.includes(ownerUid))
+    ));
+
+    const unsubscribes = ownerUids.map(ownerUid => onSnapshot(
+      doc(firebaseDb, 'messages', ownerUid),
+      messageDoc => {
+        setChatMessages(previous => {
+          const next = { ...previous };
+          if (messageDoc.exists()) next[ownerUid] = messageDoc.data();
+          else delete next[ownerUid];
+          return next;
+        });
+      },
+      error => console.error('Firestore chat read failed:', error)
+    ));
+
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+  }, [authReady, chatOwnerKey]);
 
   const handleViewportChange = useCallback((x, y) => {
     setViewportCell(previous => previous.x === x && previous.y === y ? previous : { x, y });
@@ -1262,6 +1294,26 @@ export default function App() {
     }
   }, []);
 
+  const handleSendChat = useCallback(async (rawText) => {
+    const user = firebaseAuth.currentUser;
+    const myCharacter = worldCharactersRef.current.find(character => character.id === myCharacterId);
+    const text = sliceEmojiString(String(rawText || '').replace(/\s+/g, ' ').trim(), 30);
+    if (!user || !myCharacter || !text) throw new Error('채팅을 보낼 수 없습니다.');
+
+    const now = Date.now();
+    const message = {
+      ownerUid: user.uid,
+      characterId: myCharacter.id,
+      cellId: getCellId(myCharacter.x, myCharacter.y),
+      text,
+      updatedAtMs: now,
+      expiresAtMs: now + 5000
+    };
+
+    await setDoc(doc(firebaseDb, 'messages', user.uid), message);
+    setChatMessages(previous => ({ ...previous, [user.uid]: message }));
+  }, [myCharacterId]);
+
   const handleUpdateBestScore = useCallback((id, gameType, score) => {
     let bestScoreChanged = false;
     setWorldCharacters(prev => prev.map(c => {
@@ -1354,6 +1406,7 @@ export default function App() {
             onAddJumps={handleAddJumps} onResetWorld={handleResetWorld} onShowConfirm={showModal}
             onUpdateBestScore={handleUpdateBestScore}
             onViewportChange={handleViewportChange}
+            chatMessages={chatMessages} onSendChat={handleSendChat}
           />
         )}
       </main>
@@ -1512,7 +1565,7 @@ function Step1Create({
   );
 }
 
-function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange }) {
+function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat }) {
   const WORLD_SIZE = 3000;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
@@ -1533,6 +1586,29 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [feverStates, setFeverStates] = useState({});
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [chatCooldownUntil, setChatCooldownUntil] = useState(0);
+
+  const handleChatSubmit = async (event) => {
+    event.preventDefault();
+    const safeText = sliceEmojiString(chatDraft.replace(/\s+/g, ' ').trim(), 30);
+    if (!safeText || chatSending || Date.now() < chatCooldownUntil) return;
+
+    setChatSending(true);
+    try {
+      await onSendChat(safeText);
+      setChatDraft('');
+      const cooldownEnd = Date.now() + 5000;
+      setChatCooldownUntil(cooldownEnd);
+      window.setTimeout(() => setChatCooldownUntil(0), 5000);
+    } catch (error) {
+      console.error('Chat send failed:', error);
+      onShowConfirm('채팅 전송 실패', 'Firestore messages 권한과 보안 규칙을 확인해 주세요.', null, false);
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   const clampTransform = useCallback((candidate) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -1722,6 +1798,21 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
           </div>
         </div>
+        {myCharacterId && (
+          <form onSubmit={handleChatSubmit} className="flex items-center gap-1 w-full sm:w-auto">
+            <input
+              type="text"
+              value={chatDraft}
+              onChange={event => setChatDraft(sliceEmojiString(event.target.value, 30))}
+              className="win95-input flex-1 sm:w-48 min-w-0"
+              placeholder="메시지·이모티콘 (30자)"
+              aria-label="캐릭터 채팅 메시지"
+            />
+            <button type="submit" disabled={!chatDraft.trim() || chatSending || Date.now() < chatCooldownUntil} className="win95-button whitespace-nowrap disabled:opacity-60">
+              {chatSending ? '전송 중' : Date.now() < chatCooldownUntil ? '대기' : '말하기'}
+            </button>
+          </form>
+        )}
       </div>
 
       <div
@@ -1745,6 +1836,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             const canEdit = isMine || isAdmin;
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
+            const chatMessage = char.ownerUid ? chatMessages[char.ownerUid] : null;
+            const showChat = chatMessage?.characterId === char.id && chatMessage.expiresAtMs > Date.now();
             
             return (
               <div 
@@ -1786,6 +1879,12 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   }
                 }}
               >
+                {showChat && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[90] max-w-[180px] min-w-[52px] rounded-lg border-2 border-black bg-white px-2 py-1 text-center text-[12px] leading-tight font-bold text-black shadow-[2px_2px_0_rgba(0,0,0,0.45)] whitespace-normal break-words pointer-events-none">
+                    {chatMessage.text}
+                    <span className="absolute left-1/2 top-full -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-black"></span>
+                  </div>
+                )}
                 <div className="relative" id={`char-wrapper-${char.id}`}>
                   <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${isFever ? char.duration * 0.5 : char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : 'none', transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
                     <div className="relative inline-flex items-center justify-center pointer-events-none">
