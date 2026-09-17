@@ -726,7 +726,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     if (!canvas || !ctx) return;
     
     const keys = { left: false, right: false };
-    const player = { x: 189, y: GAME_HEIGHT - 125, vx: 0, vy: -14 };
+    const player = { x: 189, y: GAME_HEIGHT - 125, vx: 0, vy: -13.1 };
 
     // 모든 고도에서 같은 공식으로 계산해 초반/중반 발판 크기가 역전되지 않게 한다.
     const getPlatformWidth = (altitude) => {
@@ -841,7 +841,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       player.vx = Math.max(-6.4, Math.min(6.4, player.vx)); player.x += player.vx;
       if (player.x < -PLAYER_SIZE) player.x = GAME_WIDTH; if (player.x > GAME_WIDTH) player.x = -PLAYER_SIZE;
       
-      player.vy += .62; const oldBottom = player.y + PLAYER_SIZE; player.y += player.vy;
+      player.vy += .60; const oldBottom = player.y + PLAYER_SIZE; player.y += player.vy;
       
       platforms.forEach((p) => { 
         if (p.type === "moving") { 
@@ -854,7 +854,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       if (player.vy > 0) {
         for (const p of platforms) {
           const landing = !p.used && oldBottom <= p.y + 12 && player.y + PLAYER_SIZE >= p.y && player.x + PLAYER_SIZE - 8 > p.x && player.x + 8 < p.x + p.w;
-          if (landing) { player.vy = p.type === "boost" ? -18.2 : -14.1; if (p.type === "fragile") p.used = true; break; }
+          if (landing) { player.vy = p.type === "boost" ? -16.5 : -13.2; if (p.type === "fragile") p.used = true; break; }
         }
       }
       
@@ -996,6 +996,7 @@ export default function App() {
   const [currentCapacity, setCurrentCapacity] = useState(INITIAL_FILL);
   const [sharedCharacterCount, setSharedCharacterCount] = useState(0);
   const [isFull, setIsFull] = useState(false);
+  const [isMobileMapMenuOpen, setIsMobileMapMenuOpen] = useState(false);
 
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
@@ -1429,14 +1430,24 @@ export default function App() {
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
       <header className="win95-panel m-0 p-1 sm:p-2 flex flex-col md:flex-row justify-between items-center gap-1 sm:gap-4 z-40">
-        <div className="flex items-center gap-2 px-2 w-full md:w-auto justify-start">
+        <div className="flex items-center gap-2 px-2 w-full md:w-auto justify-between md:justify-start">
           <div className="flex items-center gap-2">
             <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWpz2kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA6SURBVChTY/z//z8DtQATAxWASTT//9sV9A8nQ9Vwg0BcEKYIboBIAwB2F1FkA7oBsAC6AcQGIMv/GQC0oSEW4K7rKAAAAABJRU5ErkJggg==" alt="icon" className="w-4 h-4 rendering-pixelated" />
             <h1 className="text-sm font-bold">에바뛰_네트워크_모니터.exe {isAdmin && <span className="text-red-600">[ADMIN]</span>}</h1>
           </div>
+          {step === 2 && (
+            <button
+              type="button"
+              onClick={() => setIsMobileMapMenuOpen(previous => !previous)}
+              className="win95-button sm:hidden px-2 py-0.5 text-xs font-bold whitespace-nowrap"
+              aria-expanded={isMobileMapMenuOpen}
+            >
+              {isMobileMapMenuOpen ? '▲ 메뉴 접기' : '▼ 메뉴 열기'}
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-4 w-full md:w-auto px-2 justify-end">
+        <div className={`${step === 2 && !isMobileMapMenuOpen ? 'hidden sm:flex' : 'flex'} items-center gap-4 w-full md:w-auto px-2 justify-end`}>
           <div className="flex flex-col items-end gap-1">
             <div className="text-xs font-bold tracking-wide">
               KSPO DOME 실시간 인원 <span className="text-[#000080] text-sm">{currentCapacity.toLocaleString()}</span> / {MAX_CAPACITY.toLocaleString()}명
@@ -1476,6 +1487,7 @@ export default function App() {
             onUpdateBestScore={handleUpdateBestScore}
             onViewportChange={handleViewportChange}
             chatMessages={chatMessages} onSendChat={handleSendChat}
+            mobileControlsOpen={isMobileMapMenuOpen}
           />
         )}
       </main>
@@ -1634,7 +1646,7 @@ function Step1Create({
   );
 }
 
-function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat }) {
+function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
   const WORLD_SIZE = 3000;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
@@ -1853,7 +1865,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         <div className="flex gap-0.5"><button className="win95-title-btn">_</button><button className="win95-title-btn">□</button><button className="win95-title-btn" onClick={onGoHome}>X</button></div>
       </div>
 
-      <div className="bg-[#c0c0c0] p-1 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[var(--win-border-dark)] z-50">
+      <div className={`bg-[#c0c0c0] p-1 ${mobileControlsOpen ? 'flex' : 'hidden sm:flex'} flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[var(--win-border-dark)] z-50`}>
         <div className="flex items-center gap-1 flex-wrap">
           <button onClick={onGoHome} className="win95-button">◀ 뒤로</button>
           <div className="flex items-center gap-1 ml-2"><span className="text-xs">찾기:</span><input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="win95-input w-24 sm:w-32" /></div>
