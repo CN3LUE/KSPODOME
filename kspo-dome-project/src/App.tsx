@@ -1513,6 +1513,7 @@ function Step1Create({
 }
 
 function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange }) {
+  const WORLD_SIZE = 3000;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
   const dragDistanceRef = useRef(0);
@@ -1533,9 +1534,41 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
 
+  const clampTransform = useCallback((candidate) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect?.width || !rect?.height) return candidate;
+
+    // 그리드가 화면보다 작아지지 않도록 최소 배율을 정하고,
+    // 네 방향 모두 그리드 경계 밖의 회색 영역으로 넘어가지 못하게 합니다.
+    const minimumScale = Math.max(0.3, rect.width / WORLD_SIZE, rect.height / WORLD_SIZE);
+    const scale = Math.min(3, Math.max(minimumScale, candidate.scale));
+    const scaledWidth = WORLD_SIZE * scale;
+    const scaledHeight = WORLD_SIZE * scale;
+    const minX = rect.width - scaledWidth;
+    const minY = rect.height - scaledHeight;
+
+    return {
+      scale,
+      x: scaledWidth <= rect.width ? (rect.width - scaledWidth) / 2 : Math.min(0, Math.max(minX, candidate.x)),
+      y: scaledHeight <= rect.height ? (rect.height - scaledHeight) / 2 : Math.min(0, Math.max(minY, candidate.y))
+    };
+  }, []);
+
   useEffect(() => {
     transformRef.current = transform;
   }, [transform]);
+
+  useEffect(() => {
+    const keepInsideGrid = () => setTransform(previous => clampTransform(previous));
+    keepInsideGrid();
+    const observer = new ResizeObserver(keepInsideGrid);
+    if (containerRef.current) observer.observe(containerRef.current);
+    window.addEventListener('resize', keepInsideGrid);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', keepInsideGrid);
+    };
+  }, [clampTransform]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1556,8 +1589,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (!searchTerm) return characters;
     return characters.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [characters, searchTerm]);
-
-  const WORLD_SIZE = 3000;
 
   const handlePointerDown = (e) => {
     if (draggingCharId) return;
@@ -1596,11 +1627,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       const centerY = ((first.y + second.y) / 2) - rect.top;
       const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
       const nextScale = Math.min(3, Math.max(0.3, pinchRef.current.scale * (distance / pinchRef.current.distance)));
-      const next = {
+      const next = clampTransform({
         scale: nextScale,
         x: centerX - pinchRef.current.worldX * nextScale,
         y: centerY - pinchRef.current.worldY * nextScale
-      };
+      });
       transformRef.current = next;
       setTransform(next);
       dragDistanceRef.current += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
@@ -1628,7 +1659,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       setTransform(prev => {
-        const next = { ...prev, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
+        const next = clampTransform({ ...prev, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
         transformRef.current = next;
         return next;
       });
@@ -1655,14 +1686,18 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       const delta = -e.deltaY * 0.002;
-      setTransform(prev => ({ ...prev, scale: Math.min(Math.max(0.3, prev.scale + delta), 3) }));
+      setTransform(prev => clampTransform({ ...prev, scale: prev.scale + delta }));
     });
   };
 
   const findMyCharacter = () => {
     if (!myCharacterId) return;
     const myChar = characters.find(c => c.id === myCharacterId);
-    if (myChar) setTransform({ scale: 1.5, x: (window.innerWidth / 2) - (myChar.x * 1.5), y: (window.innerHeight / 2) - (myChar.y * 1.5) });
+    if (myChar) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setTransform(clampTransform({ scale: 1.5, x: (rect.width / 2) - (myChar.x * 1.5), y: (rect.height / 2) - (myChar.y * 1.5) }));
+    }
   };
 
   return (
@@ -1683,8 +1718,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           {myCharacterId && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
           {myCharacterId && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
           <div className="flex gap-1 ml-2 border-l border-[var(--win-border-dark)] pl-2">
-            <button onClick={() => setTransform(p => ({...p, scale: Math.min(p.scale + 0.2, 3)}))} className="win95-button">+</button>
-            <button onClick={() => setTransform(p => ({...p, scale: Math.max(p.scale - 0.2, 0.3)}))} className="win95-button">-</button>
+            <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale + 0.2}))} className="win95-button">+</button>
+            <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
           </div>
         </div>
       </div>
