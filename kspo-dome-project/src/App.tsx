@@ -1001,6 +1001,8 @@ export default function App() {
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
   const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null, showCancel: false });
   const positionSaveTimersRef = useRef(new Map());
+  const positionOverridesRef = useRef(new Map());
+  const presetPositionsRef = useRef({});
   const worldCharactersRef = useRef([]);
   const chatOwnerKey = useMemo(() => Array.from(new Set(
     worldCharacters.filter(character => character.isUser && character.ownerUid).map(character => character.ownerUid)
@@ -1078,6 +1080,23 @@ export default function App() {
     setAdminPassword('');
   };
 
+  // 관리자가 옮긴 기본 예시 캐릭터 배치를 모든 접속자에게 공유합니다.
+  useEffect(() => {
+    if (!authReady || !firebaseAuth.currentUser) return;
+    return onSnapshot(doc(firebaseDb, 'settings', 'worldLayout'), layoutDoc => {
+      const positions = layoutDoc.exists() ? (layoutDoc.data().presetPositions || {}) : {};
+      Object.entries(positions).forEach(([id, saved]) => {
+        const pending = positionOverridesRef.current.get(id);
+        if (pending && ((saved as any)?.updatedAtMs || 0) >= pending.updatedAtMs) positionOverridesRef.current.delete(id);
+      });
+      presetPositionsRef.current = positions;
+      setWorldCharacters(previous => previous.map(character => {
+        const saved = positions[character.id];
+        return saved ? { ...character, x: saved.x, y: saved.y } : character;
+      }));
+    }, error => console.error('Firestore world layout read failed:', error));
+  }, [authReady]);
+
   // 현재 화면 주변 3x3 구역에서 최대 40명만 실시간으로 불러옵니다.
   useEffect(() => {
     // Firestore 규칙은 로그인 사용자를 기준으로 하므로 인증이 끝난 뒤에만 조회합니다.
@@ -1100,18 +1119,33 @@ export default function App() {
     );
 
     const unsubscribe = onSnapshot(nearbyQuery, (snapshot) => {
-      const sharedCharacters = snapshot.docs.map(characterDoc => ({
-        ...characterDoc.data(),
-        id: characterDoc.id,
-        isUser: true
-      }));
+      const sharedCharacters = snapshot.docs.map(characterDoc => {
+        const serverCharacter = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
+        const localPosition = positionOverridesRef.current.get(characterDoc.id);
+        if (!localPosition) return serverCharacter;
+        if (((serverCharacter as any).updatedAtMs || 0) >= localPosition.updatedAtMs) {
+          positionOverridesRef.current.delete(characterDoc.id);
+          return serverCharacter;
+        }
+        return { ...serverCharacter, x: localPosition.x, y: localPosition.y, cellId: localPosition.cellId };
+      });
       setWorldCharacters(previousCharacters => {
         const myPreviousCharacter = previousCharacters.find(character => character.id === myCharacterId);
         const hasMyCharacter = sharedCharacters.some(character => character.id === myCharacterId);
+        const presetCharacters = PRESET_CHARACTERS.map(character => {
+          const saved = presetPositionsRef.current[character.id];
+          return saved ? { ...character, x: saved.x, y: saved.y } : character;
+        });
+        const pendingCharacters = previousCharacters.filter(character =>
+          !character.id.startsWith('preset-')
+          && positionOverridesRef.current.has(character.id)
+          && !sharedCharacters.some(shared => shared.id === character.id)
+        );
         return [
-          ...PRESET_CHARACTERS,
+          ...presetCharacters,
           ...sharedCharacters,
-          ...(myPreviousCharacter && !hasMyCharacter ? [myPreviousCharacter] : [])
+          ...(myPreviousCharacter && !hasMyCharacter ? [myPreviousCharacter] : []),
+          ...pendingCharacters.filter(character => character.id !== myCharacterId)
         ];
       });
     }, (error) => {
@@ -1260,11 +1294,20 @@ export default function App() {
   const handleUpdateCharacterPosition = useCallback((id, newX, newY) => {
     if (!isAdmin && id !== myCharacterId) return;
     setWorldCharacters(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
-    if (id.startsWith('preset-')) return;
     const oldTimer = positionSaveTimersRef.current.get(id);
     if (oldTimer) window.clearTimeout(oldTimer);
+    const updatedAtMs = Date.now();
+    const cellId = getCellId(newX, newY);
+    positionOverridesRef.current.set(id, { x: newX, y: newY, cellId, updatedAtMs });
     const timer = window.setTimeout(() => {
-      updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId: getCellId(newX, newY), updatedAtMs: Date.now() }).catch(() => {
+      const savePosition = id.startsWith('preset-')
+        ? setDoc(doc(firebaseDb, 'settings', 'worldLayout'), {
+            presetPositions: { [id]: { x: newX, y: newY, updatedAtMs } },
+            updatedAtMs
+          }, { merge: true })
+        : updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId, updatedAtMs });
+      savePosition.catch(() => {
+        positionOverridesRef.current.delete(id);
         showModal('위치 저장 실패', 'Firestore에서 관리자 위치 변경 권한을 확인해 주세요.', null, false);
       });
       positionSaveTimersRef.current.delete(id);
