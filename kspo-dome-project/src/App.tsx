@@ -537,7 +537,12 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
           const dimensions = {
             laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
           }[type];
-          obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type });
+          // 광선은 생성될 때마다 높이가 달라집니다.
+          // 낮음/중간 광선은 점프로 피하고, 높은 광선은 가만히 아래로 통과할 수 있습니다.
+          const laserY = type === "laser"
+            ? [GROUND_Y - 26, GROUND_Y - 58, GROUND_Y - 95][Math.floor(Math.random() * 3)]
+            : null;
+          obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type, y: laserY });
         }
       }
 
@@ -556,7 +561,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       for (let i = obstacles.length - 1; i >= 0; i -= 1) {
         const o = obstacles[i];
         o.x -= speed;
-        const y = o.type === "laser" ? 185 : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
         if (o.x + o.w < 0) { obstacles.splice(i, 1); clearedObstacles += 1; setScore(clearedObstacles); continue; }
         const collisionTop = o.type === "drone" ? y + 11 : y + 4;
         const collisionBottom = o.type === "drone" ? y + 28 : y + o.h - 2;
@@ -618,7 +623,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       });
       
       obstacles.forEach((o) => {
-        const y = o.type === "laser" ? 185 : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
         if (o.type === "barrier") { ctx.fillStyle = "#ff5a61"; ctx.fillRect(o.x, y, o.w, o.h); ctx.fillStyle = "#ffd45f"; ctx.fillRect(o.x + 5, y + 12, o.w - 10, 8); }
         if (o.type === "sign") { ctx.fillStyle = "#55e2ff"; ctx.fillRect(o.x + 10, y, 7, o.h); ctx.fillStyle = "#fff"; ctx.fillRect(o.x, y, o.w, 23); }
         if (o.type === "drone") { ctx.fillStyle = "#ff62c0"; ctx.fillRect(o.x, y + 11, o.w, 17); ctx.fillStyle = "#b6f6ff"; ctx.fillRect(o.x + 8, y + 15, o.w - 16, 5); }
