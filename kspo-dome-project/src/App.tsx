@@ -357,7 +357,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
   useEffect(() => { propsRef.current = { myCharacter, onAddJumps, onUpdateBestScore }; }, [myCharacter, onAddJumps, onUpdateBestScore]);
 
   const RUN_GOAL = 250;
-  const REWARD_PER_OBSTACLE = 5;
+  const OBSTACLES_PER_REWARD = 10;
+  const REWARD_PER_GROUP = 5;
   const GAME_WIDTH = 700;
   const GAME_HEIGHT = 340;
   const GROUND_Y = 280;
@@ -420,9 +421,10 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       done = true;
       stateRef.current = cleared ? 'SUCCESS' : 'GAMEOVER';
       setGameState(stateRef.current);
-      const earned = clearedObstacles * REWARD_PER_OBSTACLE;
+      const obstacleReward = Math.floor(clearedObstacles / OBSTACLES_PER_REWARD) * REWARD_PER_GROUP;
+      const earned = obstacleReward + bonusJumps;
       setFinalScore(clearedObstacles);
-      setReward(earned + bonusJumps);
+      setReward(earned);
       
       const { myCharacter: char, onAddJumps: add, onUpdateBestScore: updateBest } = propsRef.current;
       if (earned > 0 && char) add(char.id, earned);
@@ -634,7 +636,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white pointer-events-none">
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
-                <p className="text-sm text-[#5de4ff] mt-1">장애물 1개당 {REWARD_PER_OBSTACLE} 에바뛰 획득</p>
+                <p className="text-sm text-[#5de4ff] mt-1">장애물 {OBSTACLES_PER_REWARD}개당 {REWARD_PER_GROUP} 에바뛰 획득</p>
                 <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 에바뛰</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
               </div>
@@ -825,7 +827,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       done = true; 
       stateRef.current = 'GAMEOVER'; 
       setGameState(stateRef.current); 
-      const earned = Math.max(10, Math.floor(best / 2));
+      const earned = Math.floor(best / 100);
       setFinalScore(best);
       setReward(earned);
       
@@ -970,6 +972,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
                 <h2 className="text-3xl font-bold mb-1 text-[#5de4ff]" style={{ textShadow: "0 0 14px #5de4ff" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 끝없이 올라가는 무한 모드</p>
                 <p className="text-xs text-[#5de4ff] mt-1">1000m · 2000m · 3000m 그 이상까지!</p>
+                <p className="text-sm text-[#ffd45f] mt-1">100m마다 1 에바뛰 획득</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 좌/우 터치로 이동</p>
               </div>
             )}
@@ -977,7 +980,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#070715cc] text-white">
                 <h2 className="text-3xl font-bold mb-2 text-[#ff5a61]" style={{ textShadow: "0 0 14px #ff5a61" }}>GAME OVER</h2>
                 <div className="mb-4 text-sm flex flex-col items-center gap-1 font-bold">
-                   <p className="text-white text-lg">+{reward} JUMP 획득</p>
+                   <p className="text-white text-lg">+{reward} 에바뛰 획득</p>
                    <p className="text-[#5de4ff]">최종 기록: {finalScore}M</p>
                 </div>
                 <div className="flex gap-2">
@@ -1026,7 +1029,7 @@ export default function App() {
   const positionSaveTimersRef = useRef(new Map());
   const positionOverridesRef = useRef(new Map());
   const presetPositionsRef = useRef({});
-  const restBoundarySaveRef = useRef(new Set());
+  const progressMigrationRef = useRef(new Set());
   const worldCharactersRef = useRef([]);
   const chatOwnerKey = useMemo(() => Array.from(new Set(
     worldCharacters.filter(character => character.isUser && character.ownerUid).map(character => character.ownerUid)
@@ -1166,6 +1169,9 @@ export default function App() {
               jumpsCount: localCharacter.jumpsCount,
               restUntil: localCharacter.restUntil,
               lastRestBoundary: localCharacter.lastRestBoundary,
+              passiveBaseJumps: localCharacter.passiveBaseJumps,
+              passiveStartedAtMs: localCharacter.passiveStartedAtMs,
+              animationStartedAtMs: localCharacter.animationStartedAtMs,
               updatedAtMs: localCharacter.updatedAtMs
             };
           }
@@ -1239,43 +1245,33 @@ export default function App() {
     setViewportCell(previous => previous.x === x && previous.y === y ? previous : { x, y });
   }, []);
 
-  // 1초마다 +1 패시브 점프
+  // 애니메이션은 약 1초마다 계속 뛰되, 누적 에바뛰는 공통 기준 시각에서 1분마다 +1로 계산합니다.
   useEffect(() => {
     if (step !== 2) return;
     const interval = setInterval(() => {
       const now = Date.now();
       setWorldCharacters(prev => prev.map(c => {
-        if (c.restUntil && now < c.restUntil) return c;
+        const hasSharedProgressClock = Number.isFinite(c.passiveStartedAtMs) && Number.isFinite(c.passiveBaseJumps);
+        const elapsedMinutes = hasSharedProgressClock
+          ? Math.max(0, Math.floor((now - c.passiveStartedAtMs) / 60000))
+          : 0;
+        const displayedJumps = hasSharedProgressClock
+          ? c.passiveBaseJumps + elapsedMinutes
+          : (c.jumpsCount || 0);
 
-        let nextJumps = (c.jumpsCount || 0) + 1;
-        if (nextJumps % 50 === 0 && c.lastRestBoundary === nextJumps) nextJumps += 1;
-        const startsRest = nextJumps % 50 === 0;
-        const changes = {
+        const animationStart = c.animationStartedAtMs || c.passiveStartedAtMs || c.updatedAtMs || now;
+        const animationSecond = Math.floor(Math.max(0, now - animationStart) / 1000) % 60;
+        const isRestPhase = animationSecond >= 50;
+
+        return {
           ...c,
-          jumpsCount: nextJumps,
-          restUntil: startsRest ? now + 10000 : null,
-          lastRestBoundary: startsRest ? nextJumps : c.lastRestBoundary,
-          updatedAtMs: now
+          jumpsCount: displayedJumps,
+          restUntil: isRestPhase ? now + (60 - animationSecond) * 1000 : null
         };
-        if (startsRest && c.id === myCharacterId && !c.id.startsWith('preset-')) {
-          const saveKey = `${c.id}:${nextJumps}`;
-          if (!restBoundarySaveRef.current.has(saveKey)) {
-            restBoundarySaveRef.current.add(saveKey);
-            window.setTimeout(() => {
-              updateDoc(doc(firebaseDb, 'characters', c.id), {
-                jumpsCount: nextJumps,
-                restUntil: changes.restUntil,
-                lastRestBoundary: nextJumps,
-                updatedAtMs: now
-              }).catch(() => restBoundarySaveRef.current.delete(saveKey));
-            }, 0);
-          }
-        }
-        return changes;
       }));
     }, 1000);
     return () => clearInterval(interval);
-  }, [step, myCharacterId]);
+  }, [step]);
 
   useEffect(() => {
     if (currentCapacity >= MAX_CAPACITY) setIsFull(true);
@@ -1285,32 +1281,29 @@ export default function App() {
     worldCharactersRef.current = worldCharacters;
   }, [worldCharacters]);
 
-  // 자동 점프 횟수는 매초 화면에 반영하되 Firestore에는 1분 단위로 묶어 저장합니다.
+  // 기존 캐릭터는 최초 접속 시 현재 횟수를 기준으로 새 1분 누적 시계를 한 번만 생성합니다.
   useEffect(() => {
     if (step !== 2 || !myCharacterId || myCharacterId.startsWith('preset-')) return;
+    const myCharacter = worldCharacters.find(character => character.id === myCharacterId);
+    if (!myCharacter || (Number.isFinite(myCharacter.passiveStartedAtMs) && Number.isFinite(myCharacter.passiveBaseJumps))) return;
+    if (progressMigrationRef.current.has(myCharacterId)) return;
 
-    const persistMyCharacterProgress = () => {
-      const myCharacter = worldCharactersRef.current.find(character => character.id === myCharacterId);
-      if (!myCharacter) return;
-      updateDoc(doc(firebaseDb, 'characters', myCharacterId), {
-        jumpsCount: myCharacter.jumpsCount || 0,
-        restUntil: myCharacter.restUntil || null,
-        updatedAtMs: Date.now()
-      }).catch(() => {});
+    progressMigrationRef.current.add(myCharacterId);
+    const now = Date.now();
+    const progressFields = {
+      jumpsCount: myCharacter.jumpsCount || 0,
+      passiveBaseJumps: myCharacter.jumpsCount || 0,
+      passiveStartedAtMs: now,
+      animationStartedAtMs: now,
+      restUntil: null,
+      updatedAtMs: now
     };
-
-    const interval = window.setInterval(persistMyCharacterProgress, 60000);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') persistMyCharacterProgress();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      persistMyCharacterProgress();
-    };
-  }, [step, myCharacterId]);
+    setWorldCharacters(previous => previous.map(character =>
+      character.id === myCharacterId ? { ...character, ...progressFields } : character
+    ));
+    updateDoc(doc(firebaseDb, 'characters', myCharacterId), progressFields)
+      .catch(() => progressMigrationRef.current.delete(myCharacterId));
+  }, [step, myCharacterId, worldCharacters]);
 
   const handleRegister = async (newChar) => {
     if (currentCapacity >= MAX_CAPACITY || sharedCharacterCount >= MAX_SHARED_CHARACTERS) {
@@ -1328,6 +1321,7 @@ export default function App() {
 
       const startX = 1500 + (Math.random() * 120 - 60);
       const startY = 1500 + (Math.random() * 120 - 60);
+      const now = Date.now();
       const charWithCoords = {
         ...newChar,
         imageUrl: sharedImageUrl,
@@ -1335,7 +1329,10 @@ export default function App() {
         y: startY,
         cellId: getCellId(startX, startY),
         ownerUid: user.uid,
-        updatedAtMs: Date.now()
+        passiveBaseJumps: newChar.jumpsCount || 0,
+        passiveStartedAtMs: now,
+        animationStartedAtMs: now,
+        updatedAtMs: now
       };
       delete charWithCoords.isUser;
 
@@ -1395,25 +1392,20 @@ export default function App() {
     }
   }, [isAdmin, myCharacterId, showModal]);
 
-  const handleAddJumps = useCallback((id, amount, stopAtRestBoundary = false) => {
+  const handleAddJumps = useCallback((id, amount, _stopAtRestBoundary = false) => {
     const now = Date.now();
     let savedChanges = null;
     setWorldCharacters(prev => prev.map(c => {
-      if (c.id !== id || (c.restUntil && now < c.restUntil)) return c;
+      if (c.id !== id) return c;
 
       const currentJumps = c.jumpsCount || 0;
       const requestedJumps = currentJumps + amount;
-
-      // 광장 점프는 50의 배수를 건너뛰지 않고 정확히 그 숫자에서 휴식한다.
-      if (stopAtRestBoundary) {
-        const nextRestBoundary = (Math.floor(currentJumps / 50) + 1) * 50;
-        if (requestedJumps >= nextRestBoundary) {
-          savedChanges = { jumpsCount: nextRestBoundary, restUntil: now + 10000, lastRestBoundary: nextRestBoundary, updatedAtMs: now };
-          return { ...c, ...savedChanges };
-        }
-      }
-
-      savedChanges = { jumpsCount: requestedJumps, updatedAtMs: now };
+      savedChanges = {
+        jumpsCount: requestedJumps,
+        passiveBaseJumps: requestedJumps,
+        passiveStartedAtMs: now,
+        updatedAtMs: now
+      };
       return { ...c, ...savedChanges };
     }));
     if (!id.startsWith('preset-')) {
@@ -1688,7 +1680,7 @@ function Step1Create({
               <span className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 text-sm font-bold">점프 스타일</span>
               <div className="flex flex-col gap-1 sm:gap-2 mt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" checked={motionType === 0} onChange={() => setMotionType(0)} className="accent-[#000080]" />1. 기본 점프</label>
-                <label className="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" checked={motionType === 1} onChange={() => setMotionType(1)} className="accent-[#000080]" />2. 2단 점프</label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" checked={motionType === 1} onChange={() => setMotionType(1)} className="accent-[#000080]" />2. 2단 콩콩 (뽀잉뽀잉)</label>
               </div>
             </div>
 
