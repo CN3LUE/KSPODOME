@@ -188,6 +188,15 @@ const MAX_SHARED_CHARACTERS = 500;
 const DEFAULT_STAGE_IMG = encodeURI("image_057089.jpg");
 const DEFAULT_FAN_IMG = encodeURI("image_05708b.png");
 
+// public/audio 폴더에 같은 파일명으로 음악을 넣어 주세요.
+// 모든 사용자는 아래 공통 기준 시각으로 재생 위치를 계산해 같은 곡의 같은 부분을 듣습니다.
+const BGM_TRACKS = [
+  { title: 'TRACK 01', src: `${import.meta.env.BASE_URL}audio/track-01.mp3` },
+  { title: 'TRACK 02', src: `${import.meta.env.BASE_URL}audio/track-02.mp3` },
+  { title: 'TRACK 03', src: `${import.meta.env.BASE_URL}audio/track-03.mp3` }
+];
+const BGM_SYNC_EPOCH_MS = Date.UTC(2026, 8, 18, 0, 0, 0);
+
 // Firebase Console > 프로젝트 설정 > 내 앱 > SDK 설정 및 구성 값을 .env에 넣어 사용합니다.
 // 이 값들은 Firebase 웹 앱 식별값이며 관리자 비밀번호가 아닙니다.
 const firebaseConfig = {
@@ -1057,6 +1066,12 @@ export default function App() {
   const [sharedCharacterCount, setSharedCharacterCount] = useState(0);
   const [isFull, setIsFull] = useState(false);
   const [isMobileMapMenuOpen, setIsMobileMapMenuOpen] = useState(false);
+  const [isBgmPlaying, setIsBgmPlaying] = useState(false);
+  const [bgmVolume, setBgmVolume] = useState(0.45);
+  const [bgmDurations, setBgmDurations] = useState([]);
+  const [bgmLoadState, setBgmLoadState] = useState('loading');
+  const [bgmTrackTitle, setBgmTrackTitle] = useState('BGM 준비 중');
+  const bgmAudioRef = useRef(null);
 
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
@@ -1078,6 +1093,106 @@ export default function App() {
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
   }, []);
+
+  // 재생목록의 길이를 먼저 읽어 공통 시간대의 곡과 재생 위치를 계산합니다.
+  useEffect(() => {
+    let cancelled = false;
+    const metadataAudios = [];
+    Promise.all(BGM_TRACKS.map(track => new Promise((resolve, reject) => {
+      const audio = new Audio();
+      metadataAudios.push(audio);
+      audio.preload = 'metadata';
+      audio.onloadedmetadata = () => Number.isFinite(audio.duration) && audio.duration > 0 ? resolve(audio.duration) : reject(new Error('잘못된 음악 길이'));
+      audio.onerror = () => reject(new Error(`${track.title} 파일을 불러오지 못했습니다.`));
+      audio.src = track.src;
+    }))).then((durations: number[]) => {
+      if (cancelled) return;
+      setBgmDurations(durations);
+      setBgmLoadState('ready');
+      setBgmTrackTitle('같이 듣기 준비 완료');
+    }).catch(error => {
+      console.error('BGM metadata load failed:', error);
+      if (!cancelled) {
+        setBgmLoadState('error');
+        setBgmTrackTitle('음악 파일을 확인해 주세요');
+      }
+    });
+    return () => {
+      cancelled = true;
+      metadataAudios.forEach(audio => { audio.src = ''; });
+    };
+  }, []);
+
+  const syncBgmPlayback = useCallback((shouldPlay = isBgmPlaying) => {
+    const audio = bgmAudioRef.current;
+    if (!audio || bgmDurations.length !== BGM_TRACKS.length) return;
+    const totalDuration = bgmDurations.reduce((sum, duration) => sum + duration, 0);
+    if (!(totalDuration > 0)) return;
+
+    let playlistPosition = ((Date.now() - BGM_SYNC_EPOCH_MS) / 1000) % totalDuration;
+    if (playlistPosition < 0) playlistPosition += totalDuration;
+    let trackIndex = 0;
+    while (trackIndex < bgmDurations.length - 1 && playlistPosition >= bgmDurations[trackIndex]) {
+      playlistPosition -= bgmDurations[trackIndex];
+      trackIndex += 1;
+    }
+
+    const applySyncedPosition = () => {
+      const safePosition = Math.min(playlistPosition, Math.max(0, bgmDurations[trackIndex] - 0.1));
+      if (Math.abs((audio.currentTime || 0) - safePosition) > 1.5) audio.currentTime = safePosition;
+      audio.volume = bgmVolume;
+      if (shouldPlay) {
+        audio.play().catch(error => {
+          console.error('BGM playback failed:', error);
+          setIsBgmPlaying(false);
+          setBgmTrackTitle('🎧 버튼을 다시 눌러 주세요');
+        });
+      }
+    };
+
+    setBgmTrackTitle(BGM_TRACKS[trackIndex].title);
+    if (audio.dataset.trackIndex !== String(trackIndex)) {
+      audio.dataset.trackIndex = String(trackIndex);
+      audio.src = BGM_TRACKS[trackIndex].src;
+      audio.load();
+      audio.addEventListener('loadedmetadata', applySyncedPosition, { once: true });
+      if (shouldPlay) audio.play().catch(() => {});
+    } else {
+      applySyncedPosition();
+    }
+  }, [bgmDurations, bgmVolume, isBgmPlaying]);
+
+  useEffect(() => {
+    if (bgmLoadState === 'ready') syncBgmPlayback(false);
+  }, [bgmLoadState, syncBgmPlayback]);
+
+  useEffect(() => {
+    const audio = bgmAudioRef.current;
+    if (audio) audio.volume = bgmVolume;
+  }, [bgmVolume]);
+
+  useEffect(() => {
+    if (!isBgmPlaying) return;
+    const timer = window.setInterval(() => syncBgmPlayback(true), 2000);
+    const handleVisibility = () => { if (!document.hidden) syncBgmPlayback(true); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isBgmPlaying, syncBgmPlayback]);
+
+  const handleBgmToggle = () => {
+    const audio = bgmAudioRef.current;
+    if (!audio || bgmLoadState !== 'ready') return;
+    if (isBgmPlaying) {
+      audio.pause();
+      setIsBgmPlaying(false);
+      return;
+    }
+    setIsBgmPlaying(true);
+    syncBgmPlayback(true);
+  };
 
   // Firebase 로그인 상태와 Firestore admins 문서를 확인합니다.
   useEffect(() => {
@@ -1543,6 +1658,7 @@ export default function App() {
   return (
     <div className="fixed top-0 left-0 w-full h-[100lvh] flex flex-col font-sans overflow-hidden bg-[#808080] text-black">
       <style>{globalStyles}</style>
+      <audio ref={bgmAudioRef} preload="metadata" onEnded={() => syncBgmPlayback(isBgmPlaying)} />
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
       <header className="win95-panel m-0 p-1 sm:p-2 flex flex-col md:flex-row justify-between items-center gap-1 sm:gap-4 z-40">
@@ -1573,6 +1689,35 @@ export default function App() {
               <div className={`h-full ${isFull ? 'bg-red-600' : 'bg-[#000080]'}`} style={{ width: `${fillPercentage}%` }}></div>
             </div>
           </div>
+
+          {step === 2 && (
+            <div className="flex items-center gap-1 border-l border-[var(--win-border-dark)] pl-2">
+              <button
+                type="button"
+                onClick={handleBgmToggle}
+                disabled={bgmLoadState !== 'ready'}
+                className={`win95-button px-2 py-1 text-xs font-bold whitespace-nowrap ${isBgmPlaying ? 'text-green-800' : 'text-[#000080]'} disabled:opacity-60`}
+                title={bgmTrackTitle}
+              >
+                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 같이 듣기' : '🎧 같이 듣기'}
+              </button>
+              {isBgmPlaying && (
+                <div className="flex flex-col gap-0.5 min-w-[90px] max-w-[130px]">
+                  <span className="text-[9px] font-bold truncate" title={bgmTrackTitle}>♪ {bgmTrackTitle}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={bgmVolume}
+                    onChange={event => setBgmVolume(Number(event.target.value))}
+                    className="w-full h-3 accent-[#000080]"
+                    aria-label="배경음악 볼륨"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           
           {step === 1 && (
             <button onClick={() => setStep(2)} className="win95-button font-bold py-1 px-4 text-sm ml-4 h-[30px] whitespace-nowrap">
