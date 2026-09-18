@@ -1252,7 +1252,8 @@ export default function App() {
     setViewportCell(previous => previous.x === x && previous.y === y ? previous : { x, y });
   }, []);
 
-  // 애니메이션은 약 1초마다 계속 뛰되, 누적 에바뛰는 공통 기준 시각에서 1분마다 +1로 계산합니다.
+  // 누적 에바뛰는 공통 기준 시각에서 1분마다 +1로 계산하고,
+  // 실제 표시 횟수가 50의 배수에 도달할 때마다 정확히 10초간 쉽니다.
   useEffect(() => {
     if (step !== 2) return;
     const interval = setInterval(() => {
@@ -1266,14 +1267,23 @@ export default function App() {
           ? c.passiveBaseJumps + elapsedMinutes
           : (c.jumpsCount || 0);
 
-        const animationStart = c.animationStartedAtMs || c.passiveStartedAtMs || c.updatedAtMs || now;
-        const animationSecond = Math.floor(Math.max(0, now - animationStart) / 1000) % 60;
-        const isRestPhase = animationSecond >= 50;
+        const activeSavedRestUntil = Number(c.restUntil) > now ? Number(c.restUntil) : 0;
+        let scheduledRestUntil = 0;
+
+        if (hasSharedProgressClock && displayedJumps > 0 && displayedJumps % 50 === 0) {
+          const boundaryReachedAt = c.passiveStartedAtMs + elapsedMinutes * 60000;
+          if (now < boundaryReachedAt + 10000) scheduledRestUntil = boundaryReachedAt + 10000;
+        } else if (!hasSharedProgressClock) {
+          // 기존 예시 캐릭터도 50번 점프 후 10초 쉬는 동작은 유지합니다.
+          const animationStart = c.animationStartedAtMs || c.updatedAtMs || now;
+          const animationSecond = Math.floor(Math.max(0, now - animationStart) / 1000) % 60;
+          if (animationSecond >= 50) scheduledRestUntil = now + (60 - animationSecond) * 1000;
+        }
 
         return {
           ...c,
           jumpsCount: displayedJumps,
-          restUntil: isRestPhase ? now + (60 - animationSecond) * 1000 : null
+          restUntil: Math.max(activeSavedRestUntil, scheduledRestUntil) || null
         };
       }));
     }, 1000);
@@ -1407,10 +1417,12 @@ export default function App() {
 
       const currentJumps = c.jumpsCount || 0;
       const requestedJumps = currentJumps + amount;
+      const crossedRestBoundary = Math.floor(requestedJumps / 50) > Math.floor(currentJumps / 50);
       savedChanges = {
         jumpsCount: requestedJumps,
         passiveBaseJumps: requestedJumps,
         passiveStartedAtMs: now,
+        restUntil: crossedRestBoundary ? now + 10000 : (Number(c.restUntil) > now ? c.restUntil : null),
         updatedAtMs: now
       };
       return { ...c, ...savedChanges };
@@ -2019,16 +2031,14 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   if (!isMine) return; // 내 캐릭터만 상호작용 가능
                   if (isResting) return; // 휴식 중이면 클릭 무시
 
-                  const jumpAmount = isFever ? 5 : 1;
-
-                  onAddJumps(char.id, jumpAmount, true);
+                  onAddJumps(char.id, 1, true);
 
                   if (!isFever) {
                     setClickCounts(prev => {
                       const now = Date.now();
                       const history = (prev[char.id] || []).filter(t => now - t < 2000);
                       history.push(now);
-                      if (history.length >= 5) {
+                      if (history.length >= 10) {
                         setFeverStates(fs => ({ ...fs, [char.id]: now + 5000 }));
                         setTimeout(() => { setFeverStates(fs => { const n = {...fs}; if(n[char.id]<=Date.now()) delete n[char.id]; return n; }); }, 5000);
                         return { ...prev, [char.id]: [] };
@@ -2054,7 +2064,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   </div>
                 )}
                 <div className="relative" id={`char-wrapper-${char.id}`}>
-                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${isFever ? char.duration * 0.5 : char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : 'none', transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
+                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : 'none', transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
                     <div className="relative inline-flex items-center justify-center pointer-events-none">
                       {char.imageUrl ? (
                         <img src={char.imageUrl} alt={char.name} style={{ maxHeight: isMine ? '60px' : '40px', maxWidth: isMine ? '60px' : '40px', imageRendering: 'pixelated' }} className="object-contain" />
@@ -2078,7 +2088,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                     {char.name} {isMine && <span className="text-[#000080]">[나]</span>} {isAdmin && !isMine && <span className="text-red-600">[관리]</span>}
                   </div>
                   <div className={`text-[10px] font-bold ${isFever ? 'fever-text' : 'text-[#000080]'}`}>
-                    {isResting ? '💤 숨고르기 중...' : isFever ? '🔥 FEVER TIME! (+5)' : getBadgeName(char.jumpsCount)}
+                    {isResting ? '💤 숨고르기 중...' : isFever ? '🔥 FEVER TIME!' : getBadgeName(char.jumpsCount)}
                   </div>
                   <div className="text-[11px]">에바뛰 : {char.jumpsCount.toLocaleString()}회</div>
                   
@@ -2095,7 +2105,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         onClick={(e) => { e.stopPropagation(); document.getElementById(`char-wrapper-${char.id}`)?.click(); }} 
                         disabled={isResting}
                         className={`win95-button text-[10px] py-0 px-2 ${isResting ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        {isResting ? '휴식중..' : isFever ? '+5 👆' : '+1 👆'}
+                        {isResting ? '휴식중..' : '+1 👆'}
                       </button>
                       <a
                         href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
