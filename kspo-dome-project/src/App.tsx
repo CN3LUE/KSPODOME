@@ -312,6 +312,15 @@ const generatePresets = (count) => {
     const row = Math.floor(scatteredIndex / columns);
     const cellWidth = 2860 / columns;
     const cellHeight = 2860 / rows;
+    const tierSlot = i % 10;
+    const jumpSeed = seededUnit(i * 109 + 67);
+    const presetJumps = tierSlot < 3
+      ? 30 + Math.floor(jumpSeed * 970)          // 30%: 비기너 (30~999회)
+      : tierSlot < 6
+        ? 1000 + Math.floor(jumpSeed * 4000)     // 30%: 초보 (1,000~4,999회)
+        : tierSlot < 9
+          ? 5000 + Math.floor(jumpSeed * 5000)   // 30%: 중수 (5,000~9,999회)
+          : 10000 + Math.floor(jumpSeed * 30000); // 10%: 고수 (10,000~39,999회)
 
     return {
       id: 'preset-' + i,
@@ -324,7 +333,7 @@ const generatePresets = (count) => {
       delay: -((i % 20) / 10),
       duration: 1.0 + ((i % 5) / 10),
       motionType: i % 2,
-      jumpsCount: 1200 + ((i * 631) % 95000),
+      jumpsCount: presetJumps,
       isUser: false,
       runBest: (i * 17) % 80,
       roofBest: (i * 29) % 400
@@ -1699,7 +1708,7 @@ export default function App() {
                 className={`win95-button px-2 py-1 text-xs font-bold whitespace-nowrap ${isBgmPlaying ? 'text-green-800' : 'text-[#000080]'} disabled:opacity-60`}
                 title={bgmTrackTitle}
               >
-                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 노래 듣기' : '🎧 노래 듣기'}
+                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 노래 멈춤' : '🎧 노래 듣기'}
               </button>
               {isBgmPlaying && (
                 <div className="flex flex-col gap-0.5 min-w-[90px] max-w-[130px]">
