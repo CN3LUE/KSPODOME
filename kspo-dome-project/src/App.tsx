@@ -25,6 +25,13 @@ const globalStyles = `
     -webkit-font-smoothing: none; 
   }
 
+  /* 메뉴 접기 버튼은 터치형 모바일 기기에서만 사용한다. */
+  @media (hover: hover) and (pointer: fine) {
+    .mobile-map-menu-toggle {
+      display: none !important;
+    }
+  }
+
   .win95-window {
     background: var(--win-bg);
     border-top: 2px solid var(--win-border-white);
@@ -422,9 +429,9 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       stateRef.current = cleared ? 'SUCCESS' : 'GAMEOVER';
       setGameState(stateRef.current);
       const obstacleReward = Math.floor(clearedObstacles / OBSTACLES_PER_REWARD) * REWARD_PER_GROUP;
-      const earned = obstacleReward + bonusJumps;
+      const earned = obstacleReward;
       setFinalScore(clearedObstacles);
-      setReward(earned);
+      setReward(obstacleReward + bonusJumps);
       
       const { myCharacter: char, onAddJumps: add, onUpdateBestScore: updateBest } = propsRef.current;
       if (earned > 0 && char) add(char.id, earned);
@@ -522,10 +529,10 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         if (overlap(58, 106, item.x - 12, item.x + 12) && overlap(player.y, player.y + PLAYER_SIZE, item.y - 12, item.y + 12)) {
           if (item.kind === "shield") player.shield = 520;
           else {
-            bonusJumps += 5;
+            bonusJumps += 1;
             setReward(bonusJumps);
             const { myCharacter: char, onAddJumps: add } = propsRef.current;
-            if (char) add(char.id, 5);
+            if (char) add(char.id, 1);
           }
           items.splice(i, 1);
         }
@@ -637,7 +644,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <h2 className="text-3xl font-bold mb-1 text-[#ff62c0]" style={{ textShadow: "0 0 14px #ff62c0" }}>READY?</h2>
                 <p className="font-bold text-white mt-2">목표: 장애물 {RUN_GOAL}개 통과</p>
                 <p className="text-sm text-[#5de4ff] mt-1">장애물 {OBSTACLES_PER_REWARD}개당 {REWARD_PER_GROUP} 에바뛰 획득</p>
-                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +5 에바뛰</p>
+                <p className="text-xs text-[#ffd45f] mt-1">⭐ 별 획득 시 즉시 +1 에바뛰</p>
                 <p className="text-sm mt-4 animate-pulse bg-[#e9ecff] text-[#09091b] font-bold px-4 py-2 border-2 border-white shadow-[3px_3px_#454363]">화면 탭 / 스페이스바로 시작</p>
               </div>
             )}
@@ -1490,7 +1497,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsMobileMapMenuOpen(previous => !previous)}
-              className="win95-button sm:hidden px-2 py-0.5 text-xs font-bold whitespace-nowrap"
+              className="mobile-map-menu-toggle win95-button sm:hidden px-2 py-0.5 text-xs font-bold whitespace-nowrap"
               aria-expanded={isMobileMapMenuOpen}
             >
               {isMobileMapMenuOpen ? '▲ 메뉴 접기' : '▼ 메뉴 열기'}
