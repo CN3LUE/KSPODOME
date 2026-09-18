@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
+import { getAuth, inMemoryPersistence, onAuthStateChanged, setPersistence, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, deleteDoc, doc, getCountFromServer, getDoc, getDocs, getFirestore, limit, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const globalStyles = `
@@ -208,14 +208,17 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const firebaseApp = initializeApp(firebaseConfig);
+const firebaseApp = getApps().find(app => app.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+const firebaseAdminApp = getApps().find(app => app.name === 'kspo-admin-session') || initializeApp(firebaseConfig, 'kspo-admin-session');
 const firebaseAuth = getAuth(firebaseApp);
 const firebaseDb = getFirestore(firebaseApp);
+const firebaseAdminAuth = getAuth(firebaseAdminApp);
+const firebaseAdminDb = getFirestore(firebaseAdminApp);
 const IS_ADMIN_PAGE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1';
 
-const hasAdminAccess = async (user) => {
+const hasAdminAccess = async (user, db = firebaseAdminDb) => {
   if (!user || !IS_ADMIN_PAGE) return false;
-  const adminSnapshot = await getDoc(doc(firebaseDb, 'admins', user.uid));
+  const adminSnapshot = await getDoc(doc(db, 'admins', user.uid));
   return adminSnapshot.exists() && adminSnapshot.data()?.active === true;
 };
 
@@ -479,18 +482,27 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const FIXED_FRAME_MS = 1000 / 60;
     let lastFrameTime = performance.now();
     let frameAccumulator = 0;
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+    skyGradient.addColorStop(0, "#090f2e");
+    skyGradient.addColorStop(1, "#31174b");
+    const abyssGradient = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
+    abyssGradient.addColorStop(0, "#050006");
+    abyssGradient.addColorStop(1, "#6b0039");
 
     const loop = (timestamp = performance.now()) => {
-      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
+      // 느린 모바일에서 밀린 6프레임을 한꺼번에 처리하던 현상을 막아 화면 튐을 줄입니다.
+      frameAccumulator += Math.min(50, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
       lastFrameTime = timestamp;
       let simulationSteps = 0;
 
       // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
-      while (frameAccumulator >= 1 && simulationSteps < 6) {
+      while (frameAccumulator >= 1 && simulationSteps < 3) {
       frameAccumulator -= 1;
       simulationSteps += 1;
       frame += 1;
-      speed = 7 + Math.min(6, clearedObstacles * 0.025);
+      const difficulty = Math.min(1, clearedObstacles / RUN_GOAL);
+      // 초반은 익숙한 속도로 시작하고 중후반부터 최대 약 2.35배까지 확실히 빨라집니다.
+      speed = 7 + 9.5 * Math.pow(difficulty, 0.72);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
         const pit = pits[i];
         pit.x -= speed;
@@ -510,15 +522,18 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       player.invincible = Math.max(0, player.invincible - 1);
 
       const itemNearSpawnLane = items.some(item => item.x > GAME_WIDTH - 210);
-      if (!itemNearSpawnLane && frame - lastSpawn > Math.max(46, 90 - clearedObstacles * 0.18)) {
+      const spawnInterval = Math.max(42, 92 - difficulty * 50);
+      if (!itemNearSpawnLane && frame - lastSpawn > spawnInterval) {
         lastSpawn = frame;
-        const spawnPit = clearedObstacles >= 4 && Math.random() < .17;
+        const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
         if (spawnPit) {
           const pitWidth = 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
         } else {
           const roll = Math.random();
-          const type = roll < .18 ? "laser" : roll < .42 ? "drone" : roll < .75 ? "barrier" : "sign";
+          const laserChance = .14 + difficulty * .10;
+          const droneChance = .20 + difficulty * .12;
+          const type = roll < laserChance ? "laser" : roll < laserChance + droneChance ? "drone" : roll < .78 ? "barrier" : "sign";
           const dimensions = {
             laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
           }[type];
@@ -569,17 +584,15 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       }
       if (clearedObstacles >= RUN_GOAL) { clearedObstacles = RUN_GOAL; setScore(clearedObstacles); finish(true); return; }
       }
-      if (simulationSteps >= 6) frameAccumulator = 0;
+      if (simulationSteps >= 3) frameAccumulator = 0;
 
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
       ctx.filter = "none";
       ctx.shadowColor = "rgba(0,0,0,0)";
       ctx.shadowBlur = 0;
-      const sky = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT); 
-      sky.addColorStop(0, "#090f2e"); sky.addColorStop(1, "#31174b");
-      ctx.fillStyle = sky; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-      for (let i = 0; i < 18; i += 1) { 
+      ctx.fillStyle = skyGradient; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      for (let i = 0; i < 12; i += 1) { 
         ctx.globalAlpha = .28; ctx.fillStyle = i % 3 ? "#5de4ff" : "#ff62c0"; 
         ctx.fillRect((i * 89 - frame * speed * .18) % (GAME_WIDTH + 80), 65 + (i % 5) * 27, 2, 2); 
       }
@@ -587,9 +600,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
       pits.forEach((pit) => {
         ctx.save();
-        const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
-        abyss.addColorStop(0, "#050006"); abyss.addColorStop(1, "#6b0039");
-        ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
+        ctx.fillStyle = abyssGradient; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
         ctx.shadowColor = "#ff2f8b"; ctx.shadowBlur = 12;
         ctx.strokeStyle = "#ff77bd"; ctx.lineWidth = 5; ctx.beginPath();
         ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
@@ -1203,36 +1214,26 @@ export default function App() {
     syncBgmPlayback(true);
   };
 
-  // Firebase 로그인 상태와 Firestore admins 문서를 확인합니다.
+  // 일반 방문자의 익명 세션은 관리자 로그인과 완전히 분리해 계속 유지합니다.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       if (!user) {
-        if (!IS_ADMIN_PAGE) {
-          try {
-            await signInAnonymously(firebaseAuth);
-            return;
-          } catch (error) {
-            console.error('Firebase anonymous sign-in failed:', error);
-            showModal(
-              '로그인 설정 필요',
-              'Firebase Authentication의 로그인 제공업체에서 익명(Anonymous) 로그인을 사용 설정해 주세요.',
-              null,
-              false
-            );
-          }
+        try {
+          await signInAnonymously(firebaseAuth);
+          return;
+        } catch (error) {
+          console.error('Firebase anonymous sign-in failed:', error);
+          showModal(
+            '로그인 설정 필요',
+            'Firebase Authentication의 로그인 제공업체에서 익명(Anonymous) 로그인을 사용 설정해 주세요.',
+            null,
+            false
+          );
         }
-        setIsAdmin(false);
         setAuthReady(true);
         return;
       }
-
-      try {
-        setIsAdmin(await hasAdminAccess(user));
-      } catch {
-        setIsAdmin(false);
-      } finally {
-        setAuthReady(true);
-      }
+      setAuthReady(true);
     });
 
     return unsubscribe;
@@ -1249,9 +1250,10 @@ export default function App() {
     setAdminLoginError('');
 
     try {
-      const credential = await signInWithEmailAndPassword(firebaseAuth, adminEmail.trim(), adminPassword);
-      if (!(await hasAdminAccess(credential.user))) {
-        await signOut(firebaseAuth);
+      await setPersistence(firebaseAdminAuth, inMemoryPersistence);
+      const credential = await signInWithEmailAndPassword(firebaseAdminAuth, adminEmail.trim(), adminPassword);
+      if (!(await hasAdminAccess(credential.user, firebaseAdminDb))) {
+        await signOut(firebaseAdminAuth);
         setAdminLoginError('관리자 권한이 없는 계정입니다.');
         return;
       }
@@ -1266,7 +1268,7 @@ export default function App() {
   };
 
   const handleAdminLogout = async () => {
-    await signOut(firebaseAuth);
+    await signOut(firebaseAdminAuth);
     setIsAdmin(false);
     setAdminPassword('');
   };
@@ -1544,12 +1546,13 @@ export default function App() {
     const cellId = getCellId(newX, newY);
     positionOverridesRef.current.set(id, { x: newX, y: newY, cellId, updatedAtMs });
     const timer = window.setTimeout(() => {
+      const writeDb = isAdmin ? firebaseAdminDb : firebaseDb;
       const savePosition = id.startsWith('preset-')
-        ? setDoc(doc(firebaseDb, 'settings', 'worldLayout'), {
+        ? setDoc(doc(writeDb, 'settings', 'worldLayout'), {
             presetPositions: { [id]: { x: newX, y: newY, updatedAtMs } },
             updatedAtMs
           }, { merge: true })
-        : updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId, updatedAtMs });
+        : updateDoc(doc(writeDb, 'characters', id), { x: newX, y: newY, cellId, updatedAtMs });
       savePosition.catch(() => {
         positionOverridesRef.current.delete(id);
         showModal('위치 저장 실패', 'Firestore에서 관리자 위치 변경 권한을 확인해 주세요.', null, false);
@@ -1565,9 +1568,10 @@ export default function App() {
     const isSharedCharacter = !id.startsWith('preset-');
     if (!id.startsWith('preset-')) {
       try {
-        await deleteDoc(doc(firebaseDb, 'characters', id));
+        const writeDb = isAdmin ? firebaseAdminDb : firebaseDb;
+        await deleteDoc(doc(writeDb, 'characters', id));
         if (targetCharacter?.ownerUid) {
-          await deleteDoc(doc(firebaseDb, 'messages', targetCharacter.ownerUid)).catch(() => {});
+          await deleteDoc(doc(writeDb, 'messages', targetCharacter.ownerUid)).catch(() => {});
         }
       } catch {
         showModal('삭제 실패', 'Firestore 삭제 권한을 확인해 주세요.', null, false);
@@ -1589,6 +1593,23 @@ export default function App() {
       showModal('알림', '자신의 캐릭터를 삭제하여 구경 모드로 전환됩니다.', null, false);
     }
   }, [isAdmin, myCharacterId, showModal]);
+
+  const handleClaimCharacter = useCallback(async (id) => {
+    if (!isAdmin || id.startsWith('preset-') || !firebaseAuth.currentUser) return;
+    const ownerUid = firebaseAuth.currentUser.uid;
+    const updatedAtMs = Date.now();
+    try {
+      await updateDoc(doc(firebaseAdminDb, 'characters', id), { ownerUid, updatedAtMs });
+      setWorldCharacters(previous => previous.map(character => character.id === id
+        ? { ...character, ownerUid, updatedAtMs }
+        : character));
+      setMyCharacterId(id);
+      window.localStorage.setItem('kspo-my-character-id', id);
+      showModal('소유권 복구 완료', '이 캐릭터를 현재 브라우저의 내 캐릭터로 다시 연결했습니다.', null, false);
+    } catch {
+      showModal('복구 실패', '관리자 권한과 Firestore characters 수정 규칙을 확인해 주세요.', null, false);
+    }
+  }, [isAdmin, showModal]);
 
   const handleAddJumps = useCallback((id, amount, _stopAtRestBoundary = false) => {
     const now = Date.now();
@@ -1656,11 +1677,11 @@ export default function App() {
 
   const handleResetWorld = useCallback(async () => {
     if (!isAdmin) return;
-    const snapshot = await getDocs(collection(firebaseDb, 'characters'));
+    const snapshot = await getDocs(collection(firebaseAdminDb, 'characters'));
     const batches = [];
     for (let i = 0; i < snapshot.docs.length; i += 450) {
-      const batch = writeBatch(firebaseDb);
-      snapshot.docs.slice(i, i + 450).forEach(characterDoc => batch.delete(characterDoc.ref));
+      const batch = writeBatch(firebaseAdminDb);
+      snapshot.docs.slice(i, i + 450).forEach(characterDoc => batch.delete(doc(firebaseAdminDb, 'characters', characterDoc.id)));
       batches.push(batch.commit());
     }
     await Promise.all(batches);
@@ -1685,7 +1706,7 @@ export default function App() {
         <div className="flex items-center gap-2 px-2 w-full md:w-auto justify-between md:justify-start">
           <div className="flex items-center gap-2">
             <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWpz2kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA6SURBVChTY/z//z8DtQATAxWASTT//9sV9A8nQ9Vwg0BcEKYIboBIAwB2F1FkA7oBsAC6AcQGIMv/GQC0oSEW4K7rKAAAAABJRU5ErkJggg==" alt="icon" className="w-4 h-4 rendering-pixelated" />
-            <h1 className="text-sm font-bold">랜선_에바뛰_모니터.exe {isAdmin && <span className="text-red-600">[ADMIN]</span>}</h1>
+            <h1 className="text-sm font-bold">에바뛰_네트워크_모니터.exe {isAdmin && <span className="text-red-600">[ADMIN]</span>}</h1>
           </div>
           {step === 2 && (
             <button
@@ -1763,7 +1784,7 @@ export default function App() {
           <Step2GlobalSquare 
             characters={worldCharacters} myCharacterId={myCharacterId} isAdmin={isAdmin}
             onGoHome={() => setStep(1)} onUpdatePosition={handleUpdateCharacterPosition}
-            onDeleteCharacter={handleDeleteCharacter} sysStageImg={sysStageImg} sysFanImg={sysFanImg}
+            onDeleteCharacter={handleDeleteCharacter} onClaimCharacter={handleClaimCharacter} sysStageImg={sysStageImg} sysFanImg={sysFanImg}
             onAddJumps={handleAddJumps} onResetWorld={handleResetWorld} onShowConfirm={showModal}
             onUpdateBestScore={handleUpdateBestScore}
             onViewportChange={handleViewportChange}
@@ -1963,7 +1984,7 @@ function Step1Create({
   );
 }
 
-function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
+function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, onClaimCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
   const WORLD_SIZE = 3000;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
@@ -2065,9 +2086,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (!searchTerm) return characters;
     return characters.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [characters, searchTerm]);
+  const currentUserUid = firebaseAuth.currentUser?.uid;
   const myCharacter = useMemo(
-    () => characters.find(character => character.id === myCharacterId && character.isUser),
-    [characters, myCharacterId]
+    () => characters.find(character => character.id === myCharacterId && character.isUser && character.ownerUid === currentUserUid),
+    [characters, myCharacterId, currentUserUid]
   );
   const hasMyCharacter = Boolean(myCharacter);
 
@@ -2250,7 +2272,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           </div>
 
           {filteredChars.map((char) => {
-            const isMine = char.id === myCharacterId;
+            const isMine = char.id === myCharacterId && Boolean(currentUserUid) && char.ownerUid === currentUserUid;
             const canEdit = isMine || (isAdmin && isPositionEditMode);
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
@@ -2366,21 +2388,40 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                     </div>
                   )}
                   {isAdmin && char.isUser && (
-                    <button
-                      type="button"
-                      className="win95-button text-[10px] py-0 px-2 mt-1 w-full !text-red-700 font-bold"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onShowConfirm(
-                          '캐릭터 삭제',
-                          `${char.name} 캐릭터를 광장에서 완전히 삭제하시겠습니까?`,
-                          () => onDeleteCharacter(char.id)
-                        );
-                      }}
-                    >
-                      🗑 캐릭터 삭제
-                    </button>
+                    <div className="flex flex-col gap-1 mt-1 w-full">
+                      {!isMine && (
+                        <button
+                          type="button"
+                          className="win95-button text-[10px] py-0 px-2 w-full !text-[#000080] font-bold"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onShowConfirm(
+                              '내 캐릭터로 연결',
+                              `${char.name} 캐릭터를 현재 브라우저의 내 캐릭터로 다시 연결하시겠습니까?`,
+                              () => onClaimCharacter(char.id)
+                            );
+                          }}
+                        >
+                          🔑 내 캐릭터로 연결
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="win95-button text-[10px] py-0 px-2 w-full !text-red-700 font-bold"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onShowConfirm(
+                            '캐릭터 삭제',
+                            `${char.name} 캐릭터를 광장에서 완전히 삭제하시겠습니까?`,
+                            () => onDeleteCharacter(char.id)
+                          );
+                        }}
+                      >
+                        🗑 캐릭터 삭제
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
