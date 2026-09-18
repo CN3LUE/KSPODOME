@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { getApps, initializeApp } from 'firebase/app';
-import { getAuth, inMemoryPersistence, onAuthStateChanged, setPersistence, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, deleteDoc, doc, getCountFromServer, getDoc, getDocs, getFirestore, limit, onSnapshot, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const globalStyles = `
@@ -188,15 +188,6 @@ const MAX_SHARED_CHARACTERS = 500;
 const DEFAULT_STAGE_IMG = encodeURI("image_057089.jpg");
 const DEFAULT_FAN_IMG = encodeURI("image_05708b.png");
 
-// public/audio 폴더에 같은 파일명으로 음악을 넣어 주세요.
-// 모든 사용자는 아래 공통 기준 시각으로 재생 위치를 계산해 같은 곡의 같은 부분을 듣습니다.
-const BGM_TRACKS = [
-  { title: 'TRACK 01', src: `${import.meta.env.BASE_URL}audio/track-01.mp3` },
-  { title: 'TRACK 02', src: `${import.meta.env.BASE_URL}audio/track-02.mp3` },
-  { title: 'TRACK 03', src: `${import.meta.env.BASE_URL}audio/track-03.mp3` }
-];
-const BGM_SYNC_EPOCH_MS = Date.UTC(2026, 8, 18, 0, 0, 0);
-
 // Firebase Console > 프로젝트 설정 > 내 앱 > SDK 설정 및 구성 값을 .env에 넣어 사용합니다.
 // 이 값들은 Firebase 웹 앱 식별값이며 관리자 비밀번호가 아닙니다.
 const firebaseConfig = {
@@ -208,17 +199,14 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const firebaseApp = getApps().find(app => app.name === '[DEFAULT]') || initializeApp(firebaseConfig);
-const firebaseAdminApp = getApps().find(app => app.name === 'kspo-admin-session') || initializeApp(firebaseConfig, 'kspo-admin-session');
+const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 const firebaseDb = getFirestore(firebaseApp);
-const firebaseAdminAuth = getAuth(firebaseAdminApp);
-const firebaseAdminDb = getFirestore(firebaseAdminApp);
 const IS_ADMIN_PAGE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1';
 
-const hasAdminAccess = async (user, db = firebaseAdminDb) => {
+const hasAdminAccess = async (user) => {
   if (!user || !IS_ADMIN_PAGE) return false;
-  const adminSnapshot = await getDoc(doc(db, 'admins', user.uid));
+  const adminSnapshot = await getDoc(doc(firebaseDb, 'admins', user.uid));
   return adminSnapshot.exists() && adminSnapshot.data()?.active === true;
 };
 
@@ -315,15 +303,6 @@ const generatePresets = (count) => {
     const row = Math.floor(scatteredIndex / columns);
     const cellWidth = 2860 / columns;
     const cellHeight = 2860 / rows;
-    const tierSlot = i % 10;
-    const jumpSeed = seededUnit(i * 109 + 67);
-    const presetJumps = tierSlot < 3
-      ? 30 + Math.floor(jumpSeed * 970)          // 30%: 비기너 (30~999회)
-      : tierSlot < 6
-        ? 1000 + Math.floor(jumpSeed * 4000)     // 30%: 초보 (1,000~4,999회)
-        : tierSlot < 9
-          ? 5000 + Math.floor(jumpSeed * 5000)   // 30%: 중수 (5,000~9,999회)
-          : 10000 + Math.floor(jumpSeed * 30000); // 10%: 고수 (10,000~39,999회)
 
     return {
       id: 'preset-' + i,
@@ -336,7 +315,7 @@ const generatePresets = (count) => {
       delay: -((i % 20) / 10),
       duration: 1.0 + ((i % 5) / 10),
       motionType: i % 2,
-      jumpsCount: presetJumps,
+      jumpsCount: 1200 + ((i * 631) % 95000),
       isUser: false,
       runBest: (i * 17) % 80,
       roofBest: (i * 29) % 400
@@ -479,30 +458,9 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.restore();
     };
 
-    const FIXED_FRAME_MS = 1000 / 60;
-    let lastFrameTime = performance.now();
-    let frameAccumulator = 0;
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    skyGradient.addColorStop(0, "#090f2e");
-    skyGradient.addColorStop(1, "#31174b");
-    const abyssGradient = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
-    abyssGradient.addColorStop(0, "#050006");
-    abyssGradient.addColorStop(1, "#6b0039");
-
-    const loop = (timestamp = performance.now()) => {
-      // 느린 모바일에서 밀린 6프레임을 한꺼번에 처리하던 현상을 막아 화면 튐을 줄입니다.
-      frameAccumulator += Math.min(50, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
-      lastFrameTime = timestamp;
-      let simulationSteps = 0;
-
-      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
-      while (frameAccumulator >= 1 && simulationSteps < 3) {
-      frameAccumulator -= 1;
-      simulationSteps += 1;
+    const loop = () => {
       frame += 1;
-      const difficulty = Math.min(1, clearedObstacles / RUN_GOAL);
-      // 초반은 익숙한 속도로 시작하고 중후반부터 최대 약 2.35배까지 확실히 빨라집니다.
-      speed = 7 + 9.5 * Math.pow(difficulty, 0.72);
+      speed = 7 + Math.min(6, clearedObstacles * 0.025);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
         const pit = pits[i];
         pit.x -= speed;
@@ -522,27 +480,19 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       player.invincible = Math.max(0, player.invincible - 1);
 
       const itemNearSpawnLane = items.some(item => item.x > GAME_WIDTH - 210);
-      const spawnInterval = Math.max(42, 92 - difficulty * 50);
-      if (!itemNearSpawnLane && frame - lastSpawn > spawnInterval) {
+      if (!itemNearSpawnLane && frame - lastSpawn > Math.max(46, 90 - clearedObstacles * 0.18)) {
         lastSpawn = frame;
-        const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
+        const spawnPit = clearedObstacles >= 4 && Math.random() < .17;
         if (spawnPit) {
           const pitWidth = 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
         } else {
           const roll = Math.random();
-          const laserChance = .14 + difficulty * .10;
-          const droneChance = .20 + difficulty * .12;
-          const type = roll < laserChance ? "laser" : roll < laserChance + droneChance ? "drone" : roll < .78 ? "barrier" : "sign";
+          const type = roll < .18 ? "laser" : roll < .42 ? "drone" : roll < .75 ? "barrier" : "sign";
           const dimensions = {
             laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
           }[type];
-          // 광선은 생성될 때마다 높이가 달라집니다.
-          // 낮음/중간 광선은 점프로 피하고, 높은 광선은 가만히 아래로 통과할 수 있습니다.
-          const laserY = type === "laser"
-            ? [GROUND_Y - 26, GROUND_Y - 58, GROUND_Y - 95][Math.floor(Math.random() * 3)]
-            : null;
-          obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type, y: laserY });
+          obstacles.push({ x: GAME_WIDTH + 20, ...dimensions, type });
         }
       }
 
@@ -561,7 +511,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       for (let i = obstacles.length - 1; i >= 0; i -= 1) {
         const o = obstacles[i];
         o.x -= speed;
-        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? 185 : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
         if (o.x + o.w < 0) { obstacles.splice(i, 1); clearedObstacles += 1; setScore(clearedObstacles); continue; }
         const collisionTop = o.type === "drone" ? y + 11 : y + 4;
         const collisionBottom = o.type === "drone" ? y + 28 : y + o.h - 2;
@@ -588,16 +538,16 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         }
       }
       if (clearedObstacles >= RUN_GOAL) { clearedObstacles = RUN_GOAL; setScore(clearedObstacles); finish(true); return; }
-      }
-      if (simulationSteps >= 3) frameAccumulator = 0;
 
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
       ctx.filter = "none";
       ctx.shadowColor = "rgba(0,0,0,0)";
       ctx.shadowBlur = 0;
-      ctx.fillStyle = skyGradient; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-      for (let i = 0; i < 12; i += 1) { 
+      const sky = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT); 
+      sky.addColorStop(0, "#090f2e"); sky.addColorStop(1, "#31174b");
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      for (let i = 0; i < 18; i += 1) { 
         ctx.globalAlpha = .28; ctx.fillStyle = i % 3 ? "#5de4ff" : "#ff62c0"; 
         ctx.fillRect((i * 89 - frame * speed * .18) % (GAME_WIDTH + 80), 65 + (i % 5) * 27, 2, 2); 
       }
@@ -605,7 +555,9 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
       pits.forEach((pit) => {
         ctx.save();
-        ctx.fillStyle = abyssGradient; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
+        const abyss = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
+        abyss.addColorStop(0, "#050006"); abyss.addColorStop(1, "#6b0039");
+        ctx.fillStyle = abyss; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
         ctx.shadowColor = "#ff2f8b"; ctx.shadowBlur = 12;
         ctx.strokeStyle = "#ff77bd"; ctx.lineWidth = 5; ctx.beginPath();
         ctx.moveTo(pit.x, GROUND_Y); ctx.lineTo(pit.x, GAME_HEIGHT);
@@ -623,7 +575,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       });
       
       obstacles.forEach((o) => {
-        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? 185 : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
         if (o.type === "barrier") { ctx.fillStyle = "#ff5a61"; ctx.fillRect(o.x, y, o.w, o.h); ctx.fillStyle = "#ffd45f"; ctx.fillRect(o.x + 5, y + 12, o.w - 10, 8); }
         if (o.type === "sign") { ctx.fillStyle = "#55e2ff"; ctx.fillRect(o.x + 10, y, 7, o.h); ctx.fillStyle = "#fff"; ctx.fillRect(o.x, y, o.w, 23); }
         if (o.type === "drone") { ctx.fillStyle = "#ff62c0"; ctx.fillRect(o.x, y + 11, o.w, 17); ctx.fillStyle = "#b6f6ff"; ctx.fillRect(o.x + 8, y + 15, o.w - 16, 5); }
@@ -675,7 +627,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[720px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>🏃 무한_달리기.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>🕹️ 에바뛰_RUN.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -717,7 +669,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <div className="flex gap-2 mt-2">
                   <button onClick={onClose} className="win95-button py-2 px-4">확인</button>
                   <a
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 무한 달리기에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
@@ -914,19 +866,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
     };
 
-    const FIXED_FRAME_MS = 1000 / 60;
-    let lastFrameTime = performance.now();
-    let frameAccumulator = 0;
-
-    const loop = (timestamp = performance.now()) => {
-      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
-      lastFrameTime = timestamp;
-      let simulationSteps = 0;
-
-      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
-      while (frameAccumulator >= 1 && simulationSteps < 6) {
-      frameAccumulator -= 1;
-      simulationSteps += 1;
+    const loop = () => {
       frame += 1;
       player.vx += keys.left ? -.72 : keys.right ? .72 : -player.vx * .16;
       player.vx = Math.max(-6.4, Math.min(6.4, player.vx)); player.x += player.vx;
@@ -960,8 +900,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       best = Math.max(best, Math.floor(Math.max(0, -camera / PIXELS_PER_METER)));
       if (best !== reported) { reported = best; setScore(best); }
       if (player.y > camera + GAME_HEIGHT + 60) { finish(); return; }
-      }
-      if (simulationSteps >= 6) frameAccumulator = 0;
 
       drawBackground(ctx, best);
       
@@ -1011,7 +949,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[420px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>☁️ 천국의_계단.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>🚀 KSPO_ROOF_BREAKER.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -1091,12 +1029,6 @@ export default function App() {
   const [sharedCharacterCount, setSharedCharacterCount] = useState(0);
   const [isFull, setIsFull] = useState(false);
   const [isMobileMapMenuOpen, setIsMobileMapMenuOpen] = useState(false);
-  const [isBgmPlaying, setIsBgmPlaying] = useState(false);
-  const [bgmVolume, setBgmVolume] = useState(0.45);
-  const [bgmDurations, setBgmDurations] = useState([]);
-  const [bgmLoadState, setBgmLoadState] = useState('loading');
-  const [bgmTrackTitle, setBgmTrackTitle] = useState('BGM 준비 중');
-  const bgmAudioRef = useRef(null);
 
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
@@ -1119,126 +1051,36 @@ export default function App() {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
   }, []);
 
-  // 재생목록의 길이를 먼저 읽어 공통 시간대의 곡과 재생 위치를 계산합니다.
-  useEffect(() => {
-    let cancelled = false;
-    const metadataAudios = [];
-    Promise.all(BGM_TRACKS.map(track => new Promise((resolve, reject) => {
-      const audio = new Audio();
-      metadataAudios.push(audio);
-      audio.preload = 'metadata';
-      audio.onloadedmetadata = () => Number.isFinite(audio.duration) && audio.duration > 0 ? resolve(audio.duration) : reject(new Error('잘못된 음악 길이'));
-      audio.onerror = () => reject(new Error(`${track.title} 파일을 불러오지 못했습니다.`));
-      audio.src = track.src;
-    }))).then((durations: number[]) => {
-      if (cancelled) return;
-      setBgmDurations(durations);
-      setBgmLoadState('ready');
-      setBgmTrackTitle('노래 듣기 준비 완료');
-    }).catch(error => {
-      console.error('BGM metadata load failed:', error);
-      if (!cancelled) {
-        setBgmLoadState('error');
-        setBgmTrackTitle('음악 파일을 확인해 주세요');
-      }
-    });
-    return () => {
-      cancelled = true;
-      metadataAudios.forEach(audio => { audio.src = ''; });
-    };
-  }, []);
-
-  const syncBgmPlayback = useCallback((shouldPlay = isBgmPlaying) => {
-    const audio = bgmAudioRef.current;
-    if (!audio || bgmDurations.length !== BGM_TRACKS.length) return;
-    const totalDuration = bgmDurations.reduce((sum, duration) => sum + duration, 0);
-    if (!(totalDuration > 0)) return;
-
-    let playlistPosition = ((Date.now() - BGM_SYNC_EPOCH_MS) / 1000) % totalDuration;
-    if (playlistPosition < 0) playlistPosition += totalDuration;
-    let trackIndex = 0;
-    while (trackIndex < bgmDurations.length - 1 && playlistPosition >= bgmDurations[trackIndex]) {
-      playlistPosition -= bgmDurations[trackIndex];
-      trackIndex += 1;
-    }
-
-    const applySyncedPosition = () => {
-      const safePosition = Math.min(playlistPosition, Math.max(0, bgmDurations[trackIndex] - 0.1));
-      if (Math.abs((audio.currentTime || 0) - safePosition) > 1.5) audio.currentTime = safePosition;
-      audio.volume = bgmVolume;
-      if (shouldPlay) {
-        audio.play().catch(error => {
-          console.error('BGM playback failed:', error);
-          setIsBgmPlaying(false);
-          setBgmTrackTitle('🎧 버튼을 다시 눌러 주세요');
-        });
-      }
-    };
-
-    setBgmTrackTitle(BGM_TRACKS[trackIndex].title);
-    if (audio.dataset.trackIndex !== String(trackIndex)) {
-      audio.dataset.trackIndex = String(trackIndex);
-      audio.src = BGM_TRACKS[trackIndex].src;
-      audio.load();
-      audio.addEventListener('loadedmetadata', applySyncedPosition, { once: true });
-      if (shouldPlay) audio.play().catch(() => {});
-    } else {
-      applySyncedPosition();
-    }
-  }, [bgmDurations, bgmVolume, isBgmPlaying]);
-
-  useEffect(() => {
-    if (bgmLoadState === 'ready') syncBgmPlayback(false);
-  }, [bgmLoadState, syncBgmPlayback]);
-
-  useEffect(() => {
-    const audio = bgmAudioRef.current;
-    if (audio) audio.volume = bgmVolume;
-  }, [bgmVolume]);
-
-  useEffect(() => {
-    if (!isBgmPlaying) return;
-    const timer = window.setInterval(() => syncBgmPlayback(true), 2000);
-    const handleVisibility = () => { if (!document.hidden) syncBgmPlayback(true); };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [isBgmPlaying, syncBgmPlayback]);
-
-  const handleBgmToggle = () => {
-    const audio = bgmAudioRef.current;
-    if (!audio || bgmLoadState !== 'ready') return;
-    if (isBgmPlaying) {
-      audio.pause();
-      setIsBgmPlaying(false);
-      return;
-    }
-    setIsBgmPlaying(true);
-    syncBgmPlayback(true);
-  };
-
-  // 일반 방문자의 익명 세션은 관리자 로그인과 완전히 분리해 계속 유지합니다.
+  // Firebase 로그인 상태와 Firestore admins 문서를 확인합니다.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       if (!user) {
-        try {
-          await signInAnonymously(firebaseAuth);
-          return;
-        } catch (error) {
-          console.error('Firebase anonymous sign-in failed:', error);
-          showModal(
-            '로그인 설정 필요',
-            'Firebase Authentication의 로그인 제공업체에서 익명(Anonymous) 로그인을 사용 설정해 주세요.',
-            null,
-            false
-          );
+        if (!IS_ADMIN_PAGE) {
+          try {
+            await signInAnonymously(firebaseAuth);
+            return;
+          } catch (error) {
+            console.error('Firebase anonymous sign-in failed:', error);
+            showModal(
+              '로그인 설정 필요',
+              'Firebase Authentication의 로그인 제공업체에서 익명(Anonymous) 로그인을 사용 설정해 주세요.',
+              null,
+              false
+            );
+          }
         }
+        setIsAdmin(false);
         setAuthReady(true);
         return;
       }
-      setAuthReady(true);
+
+      try {
+        setIsAdmin(await hasAdminAccess(user));
+      } catch {
+        setIsAdmin(false);
+      } finally {
+        setAuthReady(true);
+      }
     });
 
     return unsubscribe;
@@ -1255,10 +1097,9 @@ export default function App() {
     setAdminLoginError('');
 
     try {
-      await setPersistence(firebaseAdminAuth, inMemoryPersistence);
-      const credential = await signInWithEmailAndPassword(firebaseAdminAuth, adminEmail.trim(), adminPassword);
-      if (!(await hasAdminAccess(credential.user, firebaseAdminDb))) {
-        await signOut(firebaseAdminAuth);
+      const credential = await signInWithEmailAndPassword(firebaseAuth, adminEmail.trim(), adminPassword);
+      if (!(await hasAdminAccess(credential.user))) {
+        await signOut(firebaseAuth);
         setAdminLoginError('관리자 권한이 없는 계정입니다.');
         return;
       }
@@ -1273,7 +1114,7 @@ export default function App() {
   };
 
   const handleAdminLogout = async () => {
-    await signOut(firebaseAdminAuth);
+    await signOut(firebaseAuth);
     setIsAdmin(false);
     setAdminPassword('');
   };
@@ -1551,13 +1392,12 @@ export default function App() {
     const cellId = getCellId(newX, newY);
     positionOverridesRef.current.set(id, { x: newX, y: newY, cellId, updatedAtMs });
     const timer = window.setTimeout(() => {
-      const writeDb = isAdmin ? firebaseAdminDb : firebaseDb;
       const savePosition = id.startsWith('preset-')
-        ? setDoc(doc(writeDb, 'settings', 'worldLayout'), {
+        ? setDoc(doc(firebaseDb, 'settings', 'worldLayout'), {
             presetPositions: { [id]: { x: newX, y: newY, updatedAtMs } },
             updatedAtMs
           }, { merge: true })
-        : updateDoc(doc(writeDb, 'characters', id), { x: newX, y: newY, cellId, updatedAtMs });
+        : updateDoc(doc(firebaseDb, 'characters', id), { x: newX, y: newY, cellId, updatedAtMs });
       savePosition.catch(() => {
         positionOverridesRef.current.delete(id);
         showModal('위치 저장 실패', 'Firestore에서 관리자 위치 변경 권한을 확인해 주세요.', null, false);
@@ -1569,52 +1409,23 @@ export default function App() {
 
   const handleDeleteCharacter = useCallback(async (id) => {
     if (!isAdmin && id !== myCharacterId) return;
-    const targetCharacter = worldCharactersRef.current.find(character => character.id === id);
-    const isSharedCharacter = !id.startsWith('preset-');
     if (!id.startsWith('preset-')) {
       try {
-        const writeDb = isAdmin ? firebaseAdminDb : firebaseDb;
-        await deleteDoc(doc(writeDb, 'characters', id));
-        if (targetCharacter?.ownerUid) {
-          await deleteDoc(doc(writeDb, 'messages', targetCharacter.ownerUid)).catch(() => {});
-        }
+        await deleteDoc(doc(firebaseDb, 'characters', id));
       } catch {
         showModal('삭제 실패', 'Firestore 삭제 권한을 확인해 주세요.', null, false);
         return;
       }
     }
-    const pendingTimer = positionSaveTimersRef.current.get(id);
-    if (pendingTimer) window.clearTimeout(pendingTimer);
-    positionSaveTimersRef.current.delete(id);
-    positionOverridesRef.current.delete(id);
     setWorldCharacters(prev => prev.filter(c => c.id !== id));
-    if (isSharedCharacter) {
-      setCurrentCapacity(prev => Math.max(INITIAL_FILL, prev - 1));
-      setSharedCharacterCount(prev => Math.max(0, prev - 1));
-    }
     if (id === myCharacterId) {
       setMyCharacterId(null);
+      setCurrentCapacity(prev => Math.max(INITIAL_FILL, prev - 1));
+      setSharedCharacterCount(prev => Math.max(0, prev - 1));
       window.localStorage.removeItem('kspo-my-character-id');
       showModal('알림', '자신의 캐릭터를 삭제하여 구경 모드로 전환됩니다.', null, false);
     }
   }, [isAdmin, myCharacterId, showModal]);
-
-  const handleClaimCharacter = useCallback(async (id) => {
-    if (!isAdmin || id.startsWith('preset-') || !firebaseAuth.currentUser) return;
-    const ownerUid = firebaseAuth.currentUser.uid;
-    const updatedAtMs = Date.now();
-    try {
-      await updateDoc(doc(firebaseAdminDb, 'characters', id), { ownerUid, updatedAtMs });
-      setWorldCharacters(previous => previous.map(character => character.id === id
-        ? { ...character, ownerUid, updatedAtMs }
-        : character));
-      setMyCharacterId(id);
-      window.localStorage.setItem('kspo-my-character-id', id);
-      showModal('소유권 복구 완료', '이 캐릭터를 현재 브라우저의 내 캐릭터로 다시 연결했습니다.', null, false);
-    } catch {
-      showModal('복구 실패', '관리자 권한과 Firestore characters 수정 규칙을 확인해 주세요.', null, false);
-    }
-  }, [isAdmin, showModal]);
 
   const handleAddJumps = useCallback((id, amount, _stopAtRestBoundary = false) => {
     const now = Date.now();
@@ -1682,11 +1493,11 @@ export default function App() {
 
   const handleResetWorld = useCallback(async () => {
     if (!isAdmin) return;
-    const snapshot = await getDocs(collection(firebaseAdminDb, 'characters'));
+    const snapshot = await getDocs(collection(firebaseDb, 'characters'));
     const batches = [];
     for (let i = 0; i < snapshot.docs.length; i += 450) {
-      const batch = writeBatch(firebaseAdminDb);
-      snapshot.docs.slice(i, i + 450).forEach(characterDoc => batch.delete(doc(firebaseAdminDb, 'characters', characterDoc.id)));
+      const batch = writeBatch(firebaseDb);
+      snapshot.docs.slice(i, i + 450).forEach(characterDoc => batch.delete(characterDoc.ref));
       batches.push(batch.commit());
     }
     await Promise.all(batches);
@@ -1704,7 +1515,6 @@ export default function App() {
   return (
     <div className="fixed top-0 left-0 w-full h-[100lvh] flex flex-col font-sans overflow-hidden bg-[#808080] text-black">
       <style>{globalStyles}</style>
-      <audio ref={bgmAudioRef} preload="metadata" onEnded={() => syncBgmPlayback(isBgmPlaying)} />
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
       <header className="win95-panel m-0 p-1 sm:p-2 flex flex-col md:flex-row justify-between items-center gap-1 sm:gap-4 z-40">
@@ -1735,35 +1545,6 @@ export default function App() {
               <div className={`h-full ${isFull ? 'bg-red-600' : 'bg-[#000080]'}`} style={{ width: `${fillPercentage}%` }}></div>
             </div>
           </div>
-
-          {step === 2 && (
-            <div className="flex items-center gap-1 border-l border-[var(--win-border-dark)] pl-2">
-              <button
-                type="button"
-                onClick={handleBgmToggle}
-                disabled={bgmLoadState !== 'ready'}
-                className={`win95-button px-2 py-1 text-xs font-bold whitespace-nowrap ${isBgmPlaying ? 'text-green-800' : 'text-[#000080]'} disabled:opacity-60`}
-                title={bgmTrackTitle}
-              >
-                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 노래 멈춤' : '🎧 노래 듣기'}
-              </button>
-              {isBgmPlaying && (
-                <div className="flex flex-col gap-0.5 min-w-[90px] max-w-[130px]">
-                  <span className="text-[9px] font-bold truncate" title={bgmTrackTitle}>♪ {bgmTrackTitle}</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={bgmVolume}
-                    onChange={event => setBgmVolume(Number(event.target.value))}
-                    className="w-full h-3 accent-[#000080]"
-                    aria-label="배경음악 볼륨"
-                  />
-                </div>
-              )}
-            </div>
-          )}
           
           {step === 1 && (
             <button onClick={() => setStep(2)} className="win95-button font-bold py-1 px-4 text-sm ml-4 h-[30px] whitespace-nowrap">
@@ -1789,7 +1570,7 @@ export default function App() {
           <Step2GlobalSquare 
             characters={worldCharacters} myCharacterId={myCharacterId} isAdmin={isAdmin}
             onGoHome={() => setStep(1)} onUpdatePosition={handleUpdateCharacterPosition}
-            onDeleteCharacter={handleDeleteCharacter} onClaimCharacter={handleClaimCharacter} sysStageImg={sysStageImg} sysFanImg={sysFanImg}
+            onDeleteCharacter={handleDeleteCharacter} sysStageImg={sysStageImg} sysFanImg={sysFanImg}
             onAddJumps={handleAddJumps} onResetWorld={handleResetWorld} onShowConfirm={showModal}
             onUpdateBestScore={handleUpdateBestScore}
             onViewportChange={handleViewportChange}
@@ -1989,7 +1770,7 @@ function Step1Create({
   );
 }
 
-function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, onClaimCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
+function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
   const WORLD_SIZE = 3000;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
@@ -2011,7 +1792,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [feverStates, setFeverStates] = useState({});
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
-  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatCooldownUntil, setChatCooldownUntil] = useState(0);
@@ -2091,10 +1871,9 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     if (!searchTerm) return characters;
     return characters.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [characters, searchTerm]);
-  const currentUserUid = firebaseAuth.currentUser?.uid;
   const myCharacter = useMemo(
-    () => characters.find(character => character.id === myCharacterId && character.isUser && character.ownerUid === currentUserUid),
-    [characters, myCharacterId, currentUserUid]
+    () => characters.find(character => character.id === myCharacterId && character.isUser),
+    [characters, myCharacterId]
   );
   const hasMyCharacter = Boolean(myCharacter);
 
@@ -2232,7 +2011,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           )}
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {hasMyCharacter && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
-          {hasMyCharacter && <button onClick={() => setIsGameMenuOpen(true)} className="win95-button font-bold text-[#000080] ml-1">🎮 미니게임</button>}
+          {hasMyCharacter && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
+          {hasMyCharacter && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
           <div className="flex gap-1 ml-2 border-l border-[var(--win-border-dark)] pl-2">
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale + 0.2}))} className="win95-button">+</button>
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
@@ -2277,7 +2057,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           </div>
 
           {filteredChars.map((char) => {
-            const isMine = char.id === myCharacterId && Boolean(currentUserUid) && char.ownerUid === currentUserUid;
+            const isMine = char.id === myCharacterId;
             const canEdit = isMine || (isAdmin && isPositionEditMode);
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
@@ -2369,8 +2149,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   
                   {(char.runBest > 0 || char.roofBest > 0) && (
                     <div className="text-[9px] mt-1 text-gray-700 border-t border-gray-400 pt-1 w-full flex flex-col gap-0.5">
-                      {char.runBest > 0 && <div className="flex justify-between"><span>달리기 최고:</span> <b>{char.runBest}개</b></div>}
-                      {char.roofBest > 0 && <div className="flex justify-between"><span>계단 최고:</span> <b>{char.roofBest}M</b></div>}
+                      {char.runBest > 0 && <div className="flex justify-between"><span>RUN 최고:</span> <b>{char.runBest}개</b></div>}
+                      {char.roofBest > 0 && <div className="flex justify-between"><span>ROOF 최고:</span> <b>{char.roofBest}M</b></div>}
                     </div>
                   )}
 
@@ -2392,42 +2172,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                       >𝕏 Share</a>
                     </div>
                   )}
-                  {isAdmin && char.isUser && (
-                    <div className="flex flex-col gap-1 mt-1 w-full">
-                      {!isMine && (
-                        <button
-                          type="button"
-                          className="win95-button text-[10px] py-0 px-2 w-full !text-[#000080] font-bold"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onShowConfirm(
-                              '내 캐릭터로 연결',
-                              `${char.name} 캐릭터를 현재 브라우저의 내 캐릭터로 다시 연결하시겠습니까?`,
-                              () => onClaimCharacter(char.id)
-                            );
-                          }}
-                        >
-                          🔑 내 캐릭터로 연결
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="win95-button text-[10px] py-0 px-2 w-full !text-red-700 font-bold"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onShowConfirm(
-                            '캐릭터 삭제',
-                            `${char.name} 캐릭터를 광장에서 완전히 삭제하시겠습니까?`,
-                            () => onDeleteCharacter(char.id)
-                          );
-                        }}
-                      >
-                        🗑 캐릭터 삭제
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -2439,35 +2183,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         <span>현재 좌표: X={Math.round(-transform.x)}, Y={Math.round(-transform.y)}</span>
         <span>배율: {Math.round(transform.scale * 100)}%</span>
       </div>
-
-      {hasMyCharacter && isGameMenuOpen && (
-        <div className="fixed inset-0 z-[9000] bg-black/55 flex items-center justify-center p-4" onPointerDown={(event) => event.stopPropagation()}>
-          <div className="win95-window w-full max-w-sm shadow-[5px_5px_0_rgba(0,0,0,0.55)]">
-            <div className="win95-titlebar">
-              <span>🎮 미니게임_선택.exe</span>
-              <button className="win95-title-btn" onClick={() => setIsGameMenuOpen(false)}>X</button>
-            </div>
-            <div className="bg-[#c0c0c0] p-3 flex flex-col gap-3">
-              <div className="text-center text-sm font-bold">플레이할 게임을 선택해 주세요!</div>
-              <button
-                className="win95-button !items-start flex-col gap-1 p-3 text-left"
-                onClick={() => { setIsGameMenuOpen(false); setIsRunGameOpen(true); }}
-              >
-                <span className="font-bold text-red-700 text-base">🏃 무한 달리기</span>
-                <span className="text-[11px] text-gray-700">장애물을 피하고 별을 모아요 · 장애물 10개당 5 에바뛰</span>
-              </button>
-              <button
-                className="win95-button !items-start flex-col gap-1 p-3 text-left"
-                onClick={() => { setIsGameMenuOpen(false); setIsRoofGameOpen(true); }}
-              >
-                <span className="font-bold text-blue-700 text-base">☁️ 천국의 계단</span>
-                <span className="text-[11px] text-gray-700">발판을 밟고 끝없이 올라가요 · 100m당 1 에바뛰</span>
-              </button>
-              <button className="win95-button self-center px-6" onClick={() => setIsGameMenuOpen(false)}>취소</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {hasMyCharacter && <MiniGameRun isOpen={isRunGameOpen} onClose={() => setIsRunGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
       {hasMyCharacter && <MiniGameRoofBreaker isOpen={isRoofGameOpen} onClose={() => setIsRoofGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
