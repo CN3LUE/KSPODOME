@@ -1038,9 +1038,14 @@ export default function App() {
   const presetPositionsRef = useRef({});
   const progressMigrationRef = useRef(new Set());
   const worldCharactersRef = useRef([]);
-  const chatOwnerKey = useMemo(() => Array.from(new Set(
-    worldCharacters.filter(character => character.isUser && character.ownerUid).map(character => character.ownerUid)
-  )).sort().slice(0, 40).join('|'), [worldCharacters]);
+  const chatOwnerKey = useMemo(() => {
+    const ownerUids = worldCharacters
+      .filter(character => character.isUser && character.ownerUid)
+      .map(character => character.ownerUid);
+    const currentUid = firebaseAuth.currentUser?.uid;
+    if (myCharacterId && currentUid) ownerUids.push(currentUid);
+    return Array.from(new Set(ownerUids)).sort().slice(0, 40).join('|');
+  }, [worldCharacters, myCharacterId, authReady]);
 
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
@@ -1329,6 +1334,17 @@ export default function App() {
     }
     try {
       const user = firebaseAuth.currentUser || (await signInAnonymously(firebaseAuth)).user;
+      const trimmedName = String(newChar.name || '').trim();
+      const nameKey = trimmedName.toLocaleLowerCase('ko-KR');
+      const presetDuplicate = PRESET_CHARACTERS.some(character => String(character.name || '').trim().toLocaleLowerCase('ko-KR') === nameKey);
+      const [sameNameResult, sameNameKeyResult] = await Promise.all([
+        getDocs(query(collection(firebaseDb, 'characters'), where('name', '==', trimmedName), limit(1))),
+        getDocs(query(collection(firebaseDb, 'characters'), where('nameKey', '==', nameKey), limit(1)))
+      ]);
+      if (presetDuplicate || !sameNameResult.empty || !sameNameKeyResult.empty) {
+        showModal('닉네임 중복', '이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.', null, false);
+        return;
+      }
       let sharedImageUrl = null;
 
       if (newChar.imageUrl) {
@@ -1341,6 +1357,8 @@ export default function App() {
       const now = Date.now();
       const charWithCoords = {
         ...newChar,
+        name: trimmedName,
+        nameKey,
         imageUrl: sharedImageUrl,
         x: startX,
         y: startY,
@@ -1595,6 +1613,37 @@ function Step1Create({
   const [isTestJumping, setIsTestJumping] = useState(false);
   const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [imageMessage, setImageMessage] = useState('');
+  const [nicknameStatus, setNicknameStatus] = useState('idle');
+
+  useEffect(() => {
+    const trimmedName = characterName.trim();
+    if (!trimmedName) {
+      setNicknameStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setNicknameStatus('checking');
+    const timer = window.setTimeout(async () => {
+      try {
+        const nameKey = trimmedName.toLocaleLowerCase('ko-KR');
+        const presetDuplicate = PRESET_CHARACTERS.some(character => String(character.name || '').trim().toLocaleLowerCase('ko-KR') === nameKey);
+        const [sameNameResult, sameNameKeyResult] = await Promise.all([
+          getDocs(query(collection(firebaseDb, 'characters'), where('name', '==', trimmedName), limit(1))),
+          getDocs(query(collection(firebaseDb, 'characters'), where('nameKey', '==', nameKey), limit(1)))
+        ]);
+        if (!cancelled) setNicknameStatus(presetDuplicate || !sameNameResult.empty || !sameNameKeyResult.empty ? 'duplicate' : 'available');
+      } catch (error) {
+        console.error('Nickname duplicate check failed:', error);
+        if (!cancelled) setNicknameStatus('error');
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [characterName]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -1622,7 +1671,7 @@ function Step1Create({
   };
 
   const handleSubmit = () => {
-    if (!characterName.trim() || isFull) return;
+    if (!characterName.trim() || isFull || nicknameStatus === 'duplicate' || nicknameStatus === 'checking') return;
     onRegister({
       id: 'user-' + Date.now(), name: characterName, imageUrl: characterImage, emoji: characterImage ? null : (characterEmoji || '😎'),
       hasItem: hasItem, delay: 0, duration: motionType === 1 ? 1.0 : 1.2, motionType: motionType, jumpsCount: 1, isUser: true,
@@ -1670,8 +1719,13 @@ function Step1Create({
         <div className="flex flex-col gap-2 sm:gap-4 md:w-1/2 justify-between">
           <div className="space-y-2 sm:space-y-4">
             <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-2 sm:p-3 relative pt-3 sm:pt-4">
-              <span className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 text-sm font-bold">닉네임 입력:</span>
-              <input type="text" value={characterName} onChange={(e) => setCharacterName(e.target.value)} placeholder="이름을 입력하세요" className="win95-input w-full" maxLength={12} />
+              <div className="absolute -top-3 left-2 bg-[#c0c0c0] px-1 flex items-center gap-2 text-sm font-bold">
+                <span>닉네임 입력:</span>
+                {nicknameStatus === 'duplicate' && <span className="text-red-700 text-[10px] whitespace-nowrap">이미 사용 중인 닉네임입니다.</span>}
+                {nicknameStatus === 'checking' && <span className="text-gray-600 text-[10px] whitespace-nowrap">확인 중...</span>}
+                {nicknameStatus === 'available' && <span className="text-green-700 text-[10px] whitespace-nowrap">사용 가능</span>}
+              </div>
+              <input type="text" value={characterName} onChange={(e) => setCharacterName(e.target.value)} placeholder="이름을 입력하세요" className={`win95-input w-full ${nicknameStatus === 'duplicate' ? '!border-red-700' : ''}`} maxLength={12} />
             </div>
 
             <div className="flex flex-col gap-1 border border-[var(--win-border-dark)] p-2 sm:p-3 relative pt-3 sm:pt-4 mt-2">
@@ -1706,8 +1760,8 @@ function Step1Create({
           </div>
 
           <div className="flex flex-col gap-1 mt-1 sm:mt-4 pt-2 sm:pt-4 border-t border-[var(--win-border-white)]">
-            <button onClick={handleSubmit} disabled={!characterName.trim() || isFull} className="win95-button font-bold py-1.5 sm:py-2 w-full text-sm sm:text-base">
-              {isFull ? '접속 불가 (마감)' : '입장하기 (Enter)'}
+            <button onClick={handleSubmit} disabled={!characterName.trim() || isFull || nicknameStatus === 'duplicate' || nicknameStatus === 'checking'} className="win95-button font-bold py-1.5 sm:py-2 w-full text-sm sm:text-base disabled:opacity-60">
+              {isFull ? '접속 불가 (마감)' : nicknameStatus === 'duplicate' ? '다른 닉네임을 입력해 주세요' : nicknameStatus === 'checking' ? '닉네임 확인 중...' : '입장하기 (Enter)'}
             </button>
           </div>
         </div>
@@ -2007,7 +2061,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             const canEdit = isMine || (isAdmin && isPositionEditMode);
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
-            const chatMessage = char.ownerUid ? chatMessages[char.ownerUid] : null;
+            const chatMessage = (char.ownerUid ? chatMessages[char.ownerUid] : null)
+              || Object.values(chatMessages).find((message: any) => message?.characterId === char.id);
             const showChat = chatMessage?.characterId === char.id && chatMessage.expiresAtMs > Date.now();
             
             return (
@@ -2064,7 +2119,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   </div>
                 )}
                 <div className="relative" id={`char-wrapper-${char.id}`}>
-                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : 'none', transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
+                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : undefined, transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
                     <div className="relative inline-flex items-center justify-center pointer-events-none">
                       {char.imageUrl ? (
                         <img src={char.imageUrl} alt={char.name} style={{ maxHeight: isMine ? '60px' : '40px', maxWidth: isMine ? '60px' : '40px', imageRendering: 'pixelated' }} className="object-contain" />
