@@ -493,12 +493,20 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const FIXED_FRAME_MS = 1000 / 60;
     let lastFrameTime = performance.now();
     let frameAccumulator = 0;
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    skyGradient.addColorStop(0, "#090f2e");
-    skyGradient.addColorStop(1, "#31174b");
     const abyssGradient = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
     abyssGradient.addColorStop(0, "#050006");
     abyssGradient.addColorStop(1, "#6b0039");
+    const stageThemes = [
+      { name: 'NEON NIGHT', top: '#090f2e', bottom: '#31174b', ground: '#514579', line: '#5de4ff', glow: '#ff62c0' },
+      { name: 'SUNSET RUSH', top: '#431642', bottom: '#e05b57', ground: '#493052', line: '#ffd45f', glow: '#ff8b72' },
+      { name: 'ICE ROAD', top: '#08233d', bottom: '#287ca0', ground: '#526f93', line: '#d8fbff', glow: '#75e8ff' },
+      { name: 'DANGER ZONE', top: '#260617', bottom: '#7b123f', ground: '#41213d', line: '#ff62c0', glow: '#ff334f' }
+    ];
+    const stageGradients = stageThemes.map(theme => {
+      const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+      gradient.addColorStop(0, theme.top); gradient.addColorStop(1, theme.bottom);
+      return gradient;
+    });
 
     const loop = (timestamp = performance.now()) => {
       // 느린 모바일에서 밀린 6프레임을 한꺼번에 처리하던 현상을 막아 화면 튐을 줄입니다.
@@ -544,12 +552,15 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
           const pitWidth = 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
         } else {
-          const roll = Math.random();
-          const laserChance = .14 + difficulty * .10;
-          const droneChance = .20 + difficulty * .12;
-          const type = roll < laserChance ? "laser" : roll < laserChance + droneChance ? "drone" : roll < .78 ? "barrier" : "sign";
+          const availableTypes = ["barrier", "sign", "banana", "bomb"];
+          if (difficulty > .10) availableTypes.push("drone");
+          if (difficulty > .22) availableTypes.push("laser");
+          if (difficulty > .36) availableTypes.push("waterBalloon");
+          if (difficulty > .58) availableTypes.push("laser", "bomb", "waterBalloon");
+          const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
           const dimensions = {
-            laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 }
+            laser: { w: 58, h: 20 }, drone: { w: 34, h: 76 }, barrier: { w: 42, h: 38 }, sign: { w: 27, h: 62 },
+            banana: { w: 34, h: 21 }, bomb: { w: 38, h: 38 }, waterBalloon: { w: 34, h: 42 }
           }[type];
           // 광선은 생성될 때마다 높이가 달라집니다.
           // 낮음/중간 광선은 점프로 피하고, 높은 광선은 가만히 아래로 통과할 수 있습니다.
@@ -575,10 +586,14 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       for (let i = obstacles.length - 1; i >= 0; i -= 1) {
         const o = obstacles[i];
         o.x -= speed;
-        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? o.y
+          : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14
+          : o.type === "waterBalloon" ? 196 + Math.sin((frame + o.x) / 16) * 32
+          : o.type === "bomb" ? GROUND_Y - o.h + Math.sin(frame / 5) * 2
+          : GROUND_Y - o.h;
         if (o.x + o.w < 0) { obstacles.splice(i, 1); clearedObstacles += 1; setScore(clearedObstacles); continue; }
-        const collisionTop = o.type === "drone" ? y + 11 : y + 4;
-        const collisionBottom = o.type === "drone" ? y + 28 : y + o.h - 2;
+        const collisionTop = o.type === "drone" ? y + 11 : o.type === "banana" ? y + 8 : y + 4;
+        const collisionBottom = o.type === "drone" ? y + 28 : o.type === "banana" ? y + o.h : y + o.h - 2;
         const collision = overlap(67, 97, o.x + 4, o.x + o.w - 4)
           && overlap(player.y + 7, player.y + PLAYER_SIZE - 5, collisionTop, collisionBottom);
         if (collision && player.invincible === 0) {
@@ -609,13 +624,25 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.filter = "none";
       ctx.shadowColor = "rgba(0,0,0,0)";
       ctx.shadowBlur = 0;
-      ctx.fillStyle = skyGradient; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      const stageNumber = Math.floor(clearedObstacles / 35);
+      const theme = stageThemes[stageNumber % stageThemes.length];
+      ctx.fillStyle = stageGradients[stageNumber % stageGradients.length]; ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      // 구간마다 다른 색의 도시/산 실루엣이 흘러가 배경 전환이 확실히 느껴집니다.
+      ctx.save();
+      ctx.globalAlpha = .18;
+      ctx.fillStyle = theme.glow;
+      for (let i = 0; i < 9; i += 1) {
+        const bx = ((i * 104 - frame * speed * .07) % (GAME_WIDTH + 120)) - 40;
+        const bh = 28 + ((i * 23 + stageNumber * 17) % 70);
+        ctx.fillRect(bx, GROUND_Y - bh, 48 + (i % 3) * 14, bh);
+      }
+      ctx.restore();
       for (let i = 0; i < 12; i += 1) { 
         ctx.globalAlpha = .28; ctx.fillStyle = i % 3 ? "#5de4ff" : "#ff62c0"; 
         ctx.fillRect((i * 89 - frame * speed * .18) % (GAME_WIDTH + 80), 65 + (i % 5) * 27, 2, 2); 
       }
-      ctx.globalAlpha = 1; ctx.fillStyle = "#514579"; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
-      ctx.strokeStyle = "#5de4ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.fillStyle = theme.ground; ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
+      ctx.strokeStyle = theme.line; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(GAME_WIDTH, GROUND_Y); ctx.stroke();
       pits.forEach((pit) => {
         ctx.save();
         ctx.fillStyle = abyssGradient; ctx.fillRect(pit.x, GROUND_Y - 2, pit.w, GAME_HEIGHT - GROUND_Y + 2);
@@ -636,7 +663,11 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       });
       
       obstacles.forEach((o) => {
-        const y = o.type === "laser" ? o.y : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14 : GROUND_Y - o.h;
+        const y = o.type === "laser" ? o.y
+          : o.type === "drone" ? 165 + Math.sin((frame + o.x) / 13) * 14
+          : o.type === "waterBalloon" ? 196 + Math.sin((frame + o.x) / 16) * 32
+          : o.type === "bomb" ? GROUND_Y - o.h + Math.sin(frame / 5) * 2
+          : GROUND_Y - o.h;
         if (o.type === "barrier") { ctx.fillStyle = "#ff5a61"; ctx.fillRect(o.x, y, o.w, o.h); ctx.fillStyle = "#ffd45f"; ctx.fillRect(o.x + 5, y + 12, o.w - 10, 8); }
         if (o.type === "sign") { ctx.fillStyle = "#55e2ff"; ctx.fillRect(o.x + 10, y, 7, o.h); ctx.fillStyle = "#fff"; ctx.fillRect(o.x, y, o.w, 23); }
         if (o.type === "drone") { ctx.fillStyle = "#ff62c0"; ctx.fillRect(o.x, y + 11, o.w, 17); ctx.fillStyle = "#b6f6ff"; ctx.fillRect(o.x + 8, y + 15, o.w - 16, 5); }
@@ -647,6 +678,23 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
           ctx.fillStyle = "#ff2f8b"; ctx.fillRect(o.x + 8, y + 8, o.w - 16, 4);
           ctx.restore();
         }
+        if (o.type === "banana") {
+          ctx.save(); ctx.strokeStyle = "#ffe45c"; ctx.lineWidth = 7; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.arc(o.x + 17, y + 7, 13, .1, Math.PI - .1); ctx.stroke();
+          ctx.fillStyle = "#5b3a16"; ctx.fillRect(o.x + 2, y + 7, 4, 5); ctx.fillRect(o.x + 28, y + 7, 4, 5); ctx.restore();
+        }
+        if (o.type === "bomb") {
+          ctx.save(); ctx.translate(o.x + 19, y + 20); ctx.rotate(frame * .08);
+          ctx.fillStyle = "#17131e"; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#8d78a8"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(9, -13); ctx.quadraticCurveTo(18, -24, 21, -15); ctx.stroke();
+          ctx.fillStyle = frame % 12 < 6 ? "#ffd45f" : "#ff5a61"; ctx.fillRect(19, -19, 5, 5); ctx.restore();
+        }
+        if (o.type === "waterBalloon") {
+          ctx.save(); ctx.fillStyle = "#66d9ff"; ctx.strokeStyle = "#d7f8ff"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(o.x + 17, y + 18, 15, 18, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = "#b9f3ff"; ctx.fillRect(o.x + 10, y + 9, 6, 5);
+          ctx.fillStyle = "#2b91c4"; ctx.beginPath(); ctx.moveTo(o.x + 14, y + 36); ctx.lineTo(o.x + 20, y + 36); ctx.lineTo(o.x + 17, y + 42); ctx.fill(); ctx.restore();
+        }
       });
       
       if (player.shield) { ctx.strokeStyle = "#9bfbff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(82, player.y + 24, 34, 0, Math.PI * 2); ctx.stroke(); }
@@ -655,6 +703,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.fillStyle = "#0c0c23"; ctx.fillRect(18, 15, 220, 44); ctx.strokeStyle = "#5de4ff"; ctx.strokeRect(18, 15, 220, 44);
       ctx.fillStyle = "#fff"; ctx.font = "bold 18px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.fillText(`RUN  ${String(clearedObstacles).padStart(3, "0")} / ∞`, 30, 43);
+      ctx.fillStyle = theme.line; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
+      ctx.fillText(`ZONE ${stageNumber + 1} · ${theme.name}`, GAME_WIDTH - 18, 30);
       if (bonusJumps > 0) { ctx.fillStyle = "#ffd45f"; ctx.font = "bold 13px monospace"; ctx.fillText(`ITEM +${bonusJumps} JUMP`, 30, 57); }
       
       frameRef.current = requestAnimationFrame(loop);
