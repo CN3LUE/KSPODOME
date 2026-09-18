@@ -1674,7 +1674,7 @@ export default function App() {
         <div className="flex items-center gap-2 px-2 w-full md:w-auto justify-between md:justify-start">
           <div className="flex items-center gap-2">
             <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWpz2kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA6SURBVChTY/z//z8DtQATAxWASTT//9sV9A8nQ9Vwg0BcEKYIboBIAwB2F1FkA7oBsAC6AcQGIMv/GQC0oSEW4K7rKAAAAABJRU5ErkJggg==" alt="icon" className="w-4 h-4 rendering-pixelated" />
-            <h1 className="text-sm font-bold">에바뛰_네트워크_모니터.exe {isAdmin && <span className="text-red-600">[ADMIN]</span>}</h1>
+            <h1 className="text-sm font-bold">랜선_에바뛰_모니터.exe {isAdmin && <span className="text-red-600">[ADMIN]</span>}</h1>
           </div>
           {step === 2 && (
             <button
