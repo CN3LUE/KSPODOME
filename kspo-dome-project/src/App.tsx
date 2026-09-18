@@ -2345,7 +2345,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         {isResting ? '휴식중..' : '+1 👆'}
                       </button>
                       <a
-                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 랜선 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #랜선에바뛰`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onPointerDown={(e) => e.stopPropagation()}
