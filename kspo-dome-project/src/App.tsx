@@ -458,7 +458,19 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.restore();
     };
 
-    const loop = () => {
+    const FIXED_FRAME_MS = 1000 / 60;
+    let lastFrameTime = performance.now();
+    let frameAccumulator = 0;
+
+    const loop = (timestamp = performance.now()) => {
+      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
+      lastFrameTime = timestamp;
+      let simulationSteps = 0;
+
+      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
+      while (frameAccumulator >= 1 && simulationSteps < 6) {
+      frameAccumulator -= 1;
+      simulationSteps += 1;
       frame += 1;
       speed = 7 + Math.min(6, clearedObstacles * 0.025);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
@@ -538,6 +550,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         }
       }
       if (clearedObstacles >= RUN_GOAL) { clearedObstacles = RUN_GOAL; setScore(clearedObstacles); finish(true); return; }
+      }
+      if (simulationSteps >= 6) frameAccumulator = 0;
 
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
@@ -866,7 +880,19 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
     };
 
-    const loop = () => {
+    const FIXED_FRAME_MS = 1000 / 60;
+    let lastFrameTime = performance.now();
+    let frameAccumulator = 0;
+
+    const loop = (timestamp = performance.now()) => {
+      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
+      lastFrameTime = timestamp;
+      let simulationSteps = 0;
+
+      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
+      while (frameAccumulator >= 1 && simulationSteps < 6) {
+      frameAccumulator -= 1;
+      simulationSteps += 1;
       frame += 1;
       player.vx += keys.left ? -.72 : keys.right ? .72 : -player.vx * .16;
       player.vx = Math.max(-6.4, Math.min(6.4, player.vx)); player.x += player.vx;
@@ -900,6 +926,8 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       best = Math.max(best, Math.floor(Math.max(0, -camera / PIXELS_PER_METER)));
       if (best !== reported) { reported = best; setScore(best); }
       if (player.y > camera + GAME_HEIGHT + 60) { finish(); return; }
+      }
+      if (simulationSteps >= 6) frameAccumulator = 0;
 
       drawBackground(ctx, best);
       
