@@ -1109,7 +1109,7 @@ export default function App() {
       if (cancelled) return;
       setBgmDurations(durations);
       setBgmLoadState('ready');
-      setBgmTrackTitle('같이 듣기 준비 완료');
+      setBgmTrackTitle('노래 듣기 준비 완료');
     }).catch(error => {
       console.error('BGM metadata load failed:', error);
       if (!cancelled) {
@@ -1699,7 +1699,7 @@ export default function App() {
                 className={`win95-button px-2 py-1 text-xs font-bold whitespace-nowrap ${isBgmPlaying ? 'text-green-800' : 'text-[#000080]'} disabled:opacity-60`}
                 title={bgmTrackTitle}
               >
-                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 같이 듣기' : '🎧 같이 듣기'}
+                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 노래 듣기' : '🎧 노래 듣기'}
               </button>
               {isBgmPlaying && (
                 <div className="flex flex-col gap-0.5 min-w-[90px] max-w-[130px]">
