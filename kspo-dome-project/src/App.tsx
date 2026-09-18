@@ -627,7 +627,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[720px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>🕹️ 에바뛰_RUN.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>🏃 무한_달리기.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -669,7 +669,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <div className="flex gap-2 mt-2">
                   <button onClick={onClose} className="win95-button py-2 px-4">확인</button>
                   <a
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 무한 달리기에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
@@ -949,7 +949,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[420px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>🚀 KSPO_ROOF_BREAKER.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>☁️ 천국의_계단.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -1792,6 +1792,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [feverStates, setFeverStates] = useState({});
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
+  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatCooldownUntil, setChatCooldownUntil] = useState(0);
@@ -2011,8 +2012,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           )}
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {hasMyCharacter && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
-          {hasMyCharacter && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
-          {hasMyCharacter && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
+          {hasMyCharacter && <button onClick={() => setIsGameMenuOpen(true)} className="win95-button font-bold text-[#000080] ml-1">🎮 미니게임</button>}
           <div className="flex gap-1 ml-2 border-l border-[var(--win-border-dark)] pl-2">
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale + 0.2}))} className="win95-button">+</button>
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
@@ -2149,8 +2149,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   
                   {(char.runBest > 0 || char.roofBest > 0) && (
                     <div className="text-[9px] mt-1 text-gray-700 border-t border-gray-400 pt-1 w-full flex flex-col gap-0.5">
-                      {char.runBest > 0 && <div className="flex justify-between"><span>RUN 최고:</span> <b>{char.runBest}개</b></div>}
-                      {char.roofBest > 0 && <div className="flex justify-between"><span>ROOF 최고:</span> <b>{char.roofBest}M</b></div>}
+                      {char.runBest > 0 && <div className="flex justify-between"><span>달리기 최고:</span> <b>{char.runBest}개</b></div>}
+                      {char.roofBest > 0 && <div className="flex justify-between"><span>계단 최고:</span> <b>{char.roofBest}M</b></div>}
                     </div>
                   )}
 
@@ -2183,6 +2183,35 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         <span>현재 좌표: X={Math.round(-transform.x)}, Y={Math.round(-transform.y)}</span>
         <span>배율: {Math.round(transform.scale * 100)}%</span>
       </div>
+
+      {hasMyCharacter && isGameMenuOpen && (
+        <div className="fixed inset-0 z-[9000] bg-black/55 flex items-center justify-center p-4" onPointerDown={(event) => event.stopPropagation()}>
+          <div className="win95-window w-full max-w-sm shadow-[5px_5px_0_rgba(0,0,0,0.55)]">
+            <div className="win95-titlebar">
+              <span>🎮 미니게임_선택.exe</span>
+              <button className="win95-title-btn" onClick={() => setIsGameMenuOpen(false)}>X</button>
+            </div>
+            <div className="bg-[#c0c0c0] p-3 flex flex-col gap-3">
+              <div className="text-center text-sm font-bold">플레이할 게임을 선택해 주세요!</div>
+              <button
+                className="win95-button !items-start flex-col gap-1 p-3 text-left"
+                onClick={() => { setIsGameMenuOpen(false); setIsRunGameOpen(true); }}
+              >
+                <span className="font-bold text-red-700 text-base">🏃 무한 달리기</span>
+                <span className="text-[11px] text-gray-700">장애물을 피하고 별을 모아요 · 장애물 10개당 5 에바뛰</span>
+              </button>
+              <button
+                className="win95-button !items-start flex-col gap-1 p-3 text-left"
+                onClick={() => { setIsGameMenuOpen(false); setIsRoofGameOpen(true); }}
+              >
+                <span className="font-bold text-blue-700 text-base">☁️ 천국의 계단</span>
+                <span className="text-[11px] text-gray-700">발판을 밟고 끝없이 올라가요 · 100m당 1 에바뛰</span>
+              </button>
+              <button className="win95-button self-center px-6" onClick={() => setIsGameMenuOpen(false)}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {hasMyCharacter && <MiniGameRun isOpen={isRunGameOpen} onClose={() => setIsRunGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
       {hasMyCharacter && <MiniGameRoofBreaker isOpen={isRoofGameOpen} onClose={() => setIsRoofGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
