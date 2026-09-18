@@ -188,15 +188,6 @@ const MAX_SHARED_CHARACTERS = 500;
 const DEFAULT_STAGE_IMG = encodeURI("image_057089.jpg");
 const DEFAULT_FAN_IMG = encodeURI("image_05708b.png");
 
-// public/audio 폴더에 같은 파일명으로 음악을 넣어 주세요.
-// 모든 사용자는 아래 공통 기준 시각으로 재생 위치를 계산해 같은 곡의 같은 부분을 듣습니다.
-const BGM_TRACKS = [
-  { title: 'TRACK 01', src: `${import.meta.env.BASE_URL}audio/track-01.mp3` },
-  { title: 'TRACK 02', src: `${import.meta.env.BASE_URL}audio/track-02.mp3` },
-  { title: 'TRACK 03', src: `${import.meta.env.BASE_URL}audio/track-03.mp3` }
-];
-const BGM_SYNC_EPOCH_MS = Date.UTC(2026, 8, 18, 0, 0, 0);
-
 // Firebase Console > 프로젝트 설정 > 내 앱 > SDK 설정 및 구성 값을 .env에 넣어 사용합니다.
 // 이 값들은 Firebase 웹 앱 식별값이며 관리자 비밀번호가 아닙니다.
 const firebaseConfig = {
@@ -312,15 +303,6 @@ const generatePresets = (count) => {
     const row = Math.floor(scatteredIndex / columns);
     const cellWidth = 2860 / columns;
     const cellHeight = 2860 / rows;
-    const tierSlot = i % 10;
-    const jumpSeed = seededUnit(i * 109 + 67);
-    const presetJumps = tierSlot < 3
-      ? 30 + Math.floor(jumpSeed * 970)          // 30%: 비기너 (30~999회)
-      : tierSlot < 6
-        ? 1000 + Math.floor(jumpSeed * 4000)     // 30%: 초보 (1,000~4,999회)
-        : tierSlot < 9
-          ? 5000 + Math.floor(jumpSeed * 5000)   // 30%: 중수 (5,000~9,999회)
-          : 10000 + Math.floor(jumpSeed * 30000); // 10%: 고수 (10,000~39,999회)
 
     return {
       id: 'preset-' + i,
@@ -333,7 +315,7 @@ const generatePresets = (count) => {
       delay: -((i % 20) / 10),
       duration: 1.0 + ((i % 5) / 10),
       motionType: i % 2,
-      jumpsCount: presetJumps,
+      jumpsCount: 1200 + ((i * 631) % 95000),
       isUser: false,
       runBest: (i * 17) % 80,
       roofBest: (i * 29) % 400
@@ -476,19 +458,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       ctx.restore();
     };
 
-    const FIXED_FRAME_MS = 1000 / 60;
-    let lastFrameTime = performance.now();
-    let frameAccumulator = 0;
-
-    const loop = (timestamp = performance.now()) => {
-      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
-      lastFrameTime = timestamp;
-      let simulationSteps = 0;
-
-      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
-      while (frameAccumulator >= 1 && simulationSteps < 6) {
-      frameAccumulator -= 1;
-      simulationSteps += 1;
+    const loop = () => {
       frame += 1;
       speed = 7 + Math.min(6, clearedObstacles * 0.025);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
@@ -568,8 +538,6 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         }
       }
       if (clearedObstacles >= RUN_GOAL) { clearedObstacles = RUN_GOAL; setScore(clearedObstacles); finish(true); return; }
-      }
-      if (simulationSteps >= 6) frameAccumulator = 0;
 
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
@@ -659,7 +627,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[720px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>🏃 무한_달리기.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>🕹️ 에바뛰_RUN.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -701,7 +669,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <div className="flex gap-2 mt-2">
                   <button onClick={onClose} className="win95-button py-2 px-4">확인</button>
                   <a
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 무한 달리기에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 RUN에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
@@ -898,19 +866,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
     };
 
-    const FIXED_FRAME_MS = 1000 / 60;
-    let lastFrameTime = performance.now();
-    let frameAccumulator = 0;
-
-    const loop = (timestamp = performance.now()) => {
-      frameAccumulator += Math.min(100, Math.max(0, timestamp - lastFrameTime)) / FIXED_FRAME_MS;
-      lastFrameTime = timestamp;
-      let simulationSteps = 0;
-
-      // 모바일 60FPS의 물리 감각을 기준으로 모든 기기에서 같은 속도로 계산합니다.
-      while (frameAccumulator >= 1 && simulationSteps < 6) {
-      frameAccumulator -= 1;
-      simulationSteps += 1;
+    const loop = () => {
       frame += 1;
       player.vx += keys.left ? -.72 : keys.right ? .72 : -player.vx * .16;
       player.vx = Math.max(-6.4, Math.min(6.4, player.vx)); player.x += player.vx;
@@ -944,8 +900,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       best = Math.max(best, Math.floor(Math.max(0, -camera / PIXELS_PER_METER)));
       if (best !== reported) { reported = best; setScore(best); }
       if (player.y > camera + GAME_HEIGHT + 60) { finish(); return; }
-      }
-      if (simulationSteps >= 6) frameAccumulator = 0;
 
       drawBackground(ctx, best);
       
@@ -995,7 +949,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
     <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
       <div className="win95-window w-full max-w-[420px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
-          <div className="flex items-center gap-1.5"><span>☁️ 천국의_계단.exe</span></div>
+          <div className="flex items-center gap-1.5"><span>🚀 KSPO_ROOF_BREAKER.exe</span></div>
           <button className="win95-title-btn" onClick={onClose}>X</button>
         </div>
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
@@ -1075,12 +1029,6 @@ export default function App() {
   const [sharedCharacterCount, setSharedCharacterCount] = useState(0);
   const [isFull, setIsFull] = useState(false);
   const [isMobileMapMenuOpen, setIsMobileMapMenuOpen] = useState(false);
-  const [isBgmPlaying, setIsBgmPlaying] = useState(false);
-  const [bgmVolume, setBgmVolume] = useState(0.45);
-  const [bgmDurations, setBgmDurations] = useState([]);
-  const [bgmLoadState, setBgmLoadState] = useState('loading');
-  const [bgmTrackTitle, setBgmTrackTitle] = useState('BGM 준비 중');
-  const bgmAudioRef = useRef(null);
 
   const [sysStageImg, setSysStageImg] = useState(DEFAULT_STAGE_IMG);
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
@@ -1102,106 +1050,6 @@ export default function App() {
   const showModal = useCallback((title, message, onConfirm, showCancel = true) => {
     setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm?.(); setModalConfig(prev => ({...prev, isOpen: false})); }, showCancel, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})) });
   }, []);
-
-  // 재생목록의 길이를 먼저 읽어 공통 시간대의 곡과 재생 위치를 계산합니다.
-  useEffect(() => {
-    let cancelled = false;
-    const metadataAudios = [];
-    Promise.all(BGM_TRACKS.map(track => new Promise((resolve, reject) => {
-      const audio = new Audio();
-      metadataAudios.push(audio);
-      audio.preload = 'metadata';
-      audio.onloadedmetadata = () => Number.isFinite(audio.duration) && audio.duration > 0 ? resolve(audio.duration) : reject(new Error('잘못된 음악 길이'));
-      audio.onerror = () => reject(new Error(`${track.title} 파일을 불러오지 못했습니다.`));
-      audio.src = track.src;
-    }))).then((durations: number[]) => {
-      if (cancelled) return;
-      setBgmDurations(durations);
-      setBgmLoadState('ready');
-      setBgmTrackTitle('노래 듣기 준비 완료');
-    }).catch(error => {
-      console.error('BGM metadata load failed:', error);
-      if (!cancelled) {
-        setBgmLoadState('error');
-        setBgmTrackTitle('음악 파일을 확인해 주세요');
-      }
-    });
-    return () => {
-      cancelled = true;
-      metadataAudios.forEach(audio => { audio.src = ''; });
-    };
-  }, []);
-
-  const syncBgmPlayback = useCallback((shouldPlay = isBgmPlaying) => {
-    const audio = bgmAudioRef.current;
-    if (!audio || bgmDurations.length !== BGM_TRACKS.length) return;
-    const totalDuration = bgmDurations.reduce((sum, duration) => sum + duration, 0);
-    if (!(totalDuration > 0)) return;
-
-    let playlistPosition = ((Date.now() - BGM_SYNC_EPOCH_MS) / 1000) % totalDuration;
-    if (playlistPosition < 0) playlistPosition += totalDuration;
-    let trackIndex = 0;
-    while (trackIndex < bgmDurations.length - 1 && playlistPosition >= bgmDurations[trackIndex]) {
-      playlistPosition -= bgmDurations[trackIndex];
-      trackIndex += 1;
-    }
-
-    const applySyncedPosition = () => {
-      const safePosition = Math.min(playlistPosition, Math.max(0, bgmDurations[trackIndex] - 0.1));
-      if (Math.abs((audio.currentTime || 0) - safePosition) > 1.5) audio.currentTime = safePosition;
-      audio.volume = bgmVolume;
-      if (shouldPlay) {
-        audio.play().catch(error => {
-          console.error('BGM playback failed:', error);
-          setIsBgmPlaying(false);
-          setBgmTrackTitle('🎧 버튼을 다시 눌러 주세요');
-        });
-      }
-    };
-
-    setBgmTrackTitle(BGM_TRACKS[trackIndex].title);
-    if (audio.dataset.trackIndex !== String(trackIndex)) {
-      audio.dataset.trackIndex = String(trackIndex);
-      audio.src = BGM_TRACKS[trackIndex].src;
-      audio.load();
-      audio.addEventListener('loadedmetadata', applySyncedPosition, { once: true });
-      if (shouldPlay) audio.play().catch(() => {});
-    } else {
-      applySyncedPosition();
-    }
-  }, [bgmDurations, bgmVolume, isBgmPlaying]);
-
-  useEffect(() => {
-    if (bgmLoadState === 'ready') syncBgmPlayback(false);
-  }, [bgmLoadState, syncBgmPlayback]);
-
-  useEffect(() => {
-    const audio = bgmAudioRef.current;
-    if (audio) audio.volume = bgmVolume;
-  }, [bgmVolume]);
-
-  useEffect(() => {
-    if (!isBgmPlaying) return;
-    const timer = window.setInterval(() => syncBgmPlayback(true), 2000);
-    const handleVisibility = () => { if (!document.hidden) syncBgmPlayback(true); };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [isBgmPlaying, syncBgmPlayback]);
-
-  const handleBgmToggle = () => {
-    const audio = bgmAudioRef.current;
-    if (!audio || bgmLoadState !== 'ready') return;
-    if (isBgmPlaying) {
-      audio.pause();
-      setIsBgmPlaying(false);
-      return;
-    }
-    setIsBgmPlaying(true);
-    syncBgmPlayback(true);
-  };
 
   // Firebase 로그인 상태와 Firestore admins 문서를 확인합니다.
   useEffect(() => {
@@ -1667,7 +1515,6 @@ export default function App() {
   return (
     <div className="fixed top-0 left-0 w-full h-[100lvh] flex flex-col font-sans overflow-hidden bg-[#808080] text-black">
       <style>{globalStyles}</style>
-      <audio ref={bgmAudioRef} preload="metadata" onEnded={() => syncBgmPlayback(isBgmPlaying)} />
 
       {/* 레트로 윈도우 95 스타일 헤더 */}
       <header className="win95-panel m-0 p-1 sm:p-2 flex flex-col md:flex-row justify-between items-center gap-1 sm:gap-4 z-40">
@@ -1698,35 +1545,6 @@ export default function App() {
               <div className={`h-full ${isFull ? 'bg-red-600' : 'bg-[#000080]'}`} style={{ width: `${fillPercentage}%` }}></div>
             </div>
           </div>
-
-          {step === 2 && (
-            <div className="flex items-center gap-1 border-l border-[var(--win-border-dark)] pl-2">
-              <button
-                type="button"
-                onClick={handleBgmToggle}
-                disabled={bgmLoadState !== 'ready'}
-                className={`win95-button px-2 py-1 text-xs font-bold whitespace-nowrap ${isBgmPlaying ? 'text-green-800' : 'text-[#000080]'} disabled:opacity-60`}
-                title={bgmTrackTitle}
-              >
-                {bgmLoadState === 'error' ? '🎧 파일 확인' : isBgmPlaying ? '⏸ 노래 멈춤' : '🎧 노래 듣기'}
-              </button>
-              {isBgmPlaying && (
-                <div className="flex flex-col gap-0.5 min-w-[90px] max-w-[130px]">
-                  <span className="text-[9px] font-bold truncate" title={bgmTrackTitle}>♪ {bgmTrackTitle}</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={bgmVolume}
-                    onChange={event => setBgmVolume(Number(event.target.value))}
-                    className="w-full h-3 accent-[#000080]"
-                    aria-label="배경음악 볼륨"
-                  />
-                </div>
-              )}
-            </div>
-          )}
           
           {step === 1 && (
             <button onClick={() => setStep(2)} className="win95-button font-bold py-1 px-4 text-sm ml-4 h-[30px] whitespace-nowrap">
@@ -1974,7 +1792,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [feverStates, setFeverStates] = useState({});
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
-  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatCooldownUntil, setChatCooldownUntil] = useState(0);
@@ -2194,7 +2011,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           )}
           {isAdmin && <button onClick={() => onShowConfirm("초기화", "모든 캐릭터를 삭제하시겠습니까?", onResetWorld)} className="win95-button text-red-600 font-bold border border-red-800">월드 초기화</button>}
           {hasMyCharacter && <button onClick={findMyCharacter} className="win95-button font-bold text-[#000080]">내 캐릭터 찾기</button>}
-          {hasMyCharacter && <button onClick={() => setIsGameMenuOpen(true)} className="win95-button font-bold text-[#000080] ml-1">🎮 미니게임</button>}
+          {hasMyCharacter && <button onClick={() => setIsRunGameOpen(true)} className="win95-button font-bold text-red-600 ml-1">🏃 RUN</button>}
+          {hasMyCharacter && <button onClick={() => setIsRoofGameOpen(true)} className="win95-button font-bold text-blue-600">🚀 ROOF</button>}
           <div className="flex gap-1 ml-2 border-l border-[var(--win-border-dark)] pl-2">
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale + 0.2}))} className="win95-button">+</button>
             <button onClick={() => setTransform(p => clampTransform({...p, scale: p.scale - 0.2}))} className="win95-button">-</button>
@@ -2331,8 +2149,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   
                   {(char.runBest > 0 || char.roofBest > 0) && (
                     <div className="text-[9px] mt-1 text-gray-700 border-t border-gray-400 pt-1 w-full flex flex-col gap-0.5">
-                      {char.runBest > 0 && <div className="flex justify-between"><span>달리기 최고:</span> <b>{char.runBest}개</b></div>}
-                      {char.roofBest > 0 && <div className="flex justify-between"><span>계단 최고:</span> <b>{char.roofBest}M</b></div>}
+                      {char.runBest > 0 && <div className="flex justify-between"><span>RUN 최고:</span> <b>{char.runBest}개</b></div>}
+                      {char.roofBest > 0 && <div className="flex justify-between"><span>ROOF 최고:</span> <b>{char.roofBest}M</b></div>}
                     </div>
                   )}
 
@@ -2345,7 +2163,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         {isResting ? '휴식중..' : '+1 👆'}
                       </button>
                       <a
-                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 랜선 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #랜선에바뛰`)}`}
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onPointerDown={(e) => e.stopPropagation()}
@@ -2365,35 +2183,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
         <span>현재 좌표: X={Math.round(-transform.x)}, Y={Math.round(-transform.y)}</span>
         <span>배율: {Math.round(transform.scale * 100)}%</span>
       </div>
-
-      {hasMyCharacter && isGameMenuOpen && (
-        <div className="fixed inset-0 z-[9000] bg-black/55 flex items-center justify-center p-4" onPointerDown={(event) => event.stopPropagation()}>
-          <div className="win95-window w-full max-w-sm shadow-[5px_5px_0_rgba(0,0,0,0.55)]">
-            <div className="win95-titlebar">
-              <span>🎮 미니게임_선택.exe</span>
-              <button className="win95-title-btn" onClick={() => setIsGameMenuOpen(false)}>X</button>
-            </div>
-            <div className="bg-[#c0c0c0] p-3 flex flex-col gap-3">
-              <div className="text-center text-sm font-bold">플레이할 게임을 선택해 주세요!</div>
-              <button
-                className="win95-button !items-start flex-col gap-1 p-3 text-left"
-                onClick={() => { setIsGameMenuOpen(false); setIsRunGameOpen(true); }}
-              >
-                <span className="font-bold text-red-700 text-base">🏃 무한 달리기</span>
-                <span className="text-[11px] text-gray-700">장애물을 피하고 별을 모아요 · 장애물 10개당 5 에바뛰</span>
-              </button>
-              <button
-                className="win95-button !items-start flex-col gap-1 p-3 text-left"
-                onClick={() => { setIsGameMenuOpen(false); setIsRoofGameOpen(true); }}
-              >
-                <span className="font-bold text-blue-700 text-base">☁️ 천국의 계단</span>
-                <span className="text-[11px] text-gray-700">발판을 밟고 끝없이 올라가요 · 100m당 1 에바뛰</span>
-              </button>
-              <button className="win95-button self-center px-6" onClick={() => setIsGameMenuOpen(false)}>취소</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {hasMyCharacter && <MiniGameRun isOpen={isRunGameOpen} onClose={() => setIsRunGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
       {hasMyCharacter && <MiniGameRoofBreaker isOpen={isRoofGameOpen} onClose={() => setIsRoofGameOpen(false)} myCharacter={myCharacter} onAddJumps={onAddJumps} onUpdateBestScore={onUpdateBestScore} />}
