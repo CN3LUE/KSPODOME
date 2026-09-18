@@ -409,19 +409,31 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     setGameState('PLAYING');
   }, []);
 
+  // 창을 다시 열 때 이전 게임 루프나 종료 화면이 남지 않도록 항상 새 게임으로 초기화합니다.
+  useEffect(() => {
+    cancelAnimationFrame(frameRef.current);
+    if (isOpen) {
+      stateRef.current = 'READY';
+      setGameState('READY');
+      setScore(0);
+      setFinalScore(0);
+      setReward(0);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const startKey = (e) => {
-      if (['Space', 'ArrowUp', 'KeyW'].includes(e.code) && stateRef.current !== 'PLAYING') { 
+      if (isOpen && ['Space', 'ArrowUp', 'KeyW'].includes(e.code) && stateRef.current !== 'PLAYING') { 
         e.preventDefault(); 
         start(); 
       }
     };
     window.addEventListener('keydown', startKey);
     return () => window.removeEventListener('keydown', startKey);
-  }, [start]);
+  }, [start, isOpen]);
 
   useEffect(() => {
-    if (gameState !== 'PLAYING') return;
+    if (!isOpen || gameState !== 'PLAYING') return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
@@ -503,7 +515,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       // 초반에는 부드럽고, 기록이 높아질수록 최고 난도에 점진적으로 가까워집니다.
       const difficulty = 1 - Math.exp(-clearedObstacles / 140);
       // 초반은 익숙한 속도로 시작하고 중후반부터 최대 약 2.35배까지 확실히 빨라집니다.
-      speed = 7 + 9.5 * Math.pow(difficulty, 0.72);
+      speed = 7 + 11 * Math.pow(difficulty, 0.72);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
         const pit = pits[i];
         pit.x -= speed;
@@ -523,7 +535,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       player.invincible = Math.max(0, player.invincible - 1);
 
       const itemNearSpawnLane = items.some(item => item.x > GAME_WIDTH - 210);
-      const spawnInterval = Math.max(42, 92 - difficulty * 50);
+      // 기록이 늘수록 간격을 더 크게 줄여 화면에 동시에 보이는 장애물 수도 증가합니다.
+      const spawnInterval = Math.max(30, 92 - difficulty * 62);
       if (!itemNearSpawnLane && frame - lastSpawn > spawnInterval) {
         lastSpawn = frame;
         const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
@@ -649,7 +662,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     
     frameRef.current = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(frameRef.current); window.removeEventListener('keydown', playKey); };
-  }, [gameState]); // 변경점: 끊김 유발 의존성 제거
+  }, [gameState, isOpen]);
 
   useEffect(() => {
      if (gameState === 'READY' && canvasRef.current) {
@@ -667,7 +680,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
           ctx.fillText(propsRef.current.myCharacter?.emoji || '😎', 58 + PLAYER_SIZE/2, GROUND_Y - PLAYER_SIZE + PLAYER_SIZE/2);
         }
      }
-  }, [gameState]);
+  }, [gameState, isOpen]);
 
   if (!isOpen) return null;
 
@@ -706,13 +719,6 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
                 <div className="flex gap-2">
                    <button onClick={start} className="win95-button !bg-[#e9ecff] !border-white !text-[#09091b] !shadow-[3px_3px_#454363] py-2 px-4 font-bold">TRY AGAIN</button>
                    <button onClick={onClose} className="win95-button py-2 px-4">종료</button>
-                   <a
-                     href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${myCharacter.name}이(가) 에바뛰 무한 달리기에서 장애물 ${finalScore}개를 통과하고 +${reward.toLocaleString()} 에바뛰 획득! 🏃‍♂️💨`)}`}
-                     target="_blank"
-                     rel="noopener noreferrer"
-                     onClick={(e) => e.stopPropagation()}
-                     className="win95-button py-2 px-3 font-bold !bg-[#e9ecff] !text-[#09091b] !border-white !shadow-[3px_3px_#454363]"
-                   >𝕏 자랑하기</a>
                 </div>
               </div>
             )}
