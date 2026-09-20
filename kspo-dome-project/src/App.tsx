@@ -35,6 +35,12 @@ const globalStyles = `
   /* Tailwind 화면 폭 판정과 관계없이 실제 터치 기기에서 이동 패드를 표시합니다. */
   .mobile-character-dpad {
     display: none;
+    opacity: 0.68;
+    transition: opacity 120ms ease, filter 120ms ease;
+  }
+  .mobile-character-dpad:active {
+    opacity: 0.9;
+    filter: brightness(1.06);
   }
   @media (max-width: 767px), (hover: none) and (pointer: coarse) {
     .mobile-character-dpad {
@@ -2667,6 +2673,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                     lastPointerRef.current = { x: e.clientX, y: e.clientY };
                     setDraggingCharId(char.id);
                     dragDistanceRef.current = 0;
+                  } else if (isMine) {
+                    // PC에서 지도가 포인터를 먼저 잡으면 캐릭터 클릭이 취소되므로
+                    // 내 캐릭터의 단순 클릭은 지도 드래그로 전달하지 않습니다.
+                    e.stopPropagation();
                   }
                 }}
                 onClick={(e) => {
@@ -2746,7 +2756,11 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   {isMine && (
                     <div className="flex gap-1 mt-1 w-full justify-start">
                       <button 
-                        onClick={(e) => { e.stopPropagation(); document.getElementById(`char-wrapper-${char.id}`)?.click(); }} 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isResting) onAddJumps(char.id, 1, true);
+                        }} 
                         disabled={isResting}
                         className={`win95-button text-[10px] py-0 px-2 ${isResting ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         {isResting ? '휴식중..' : '+1 👆'}
