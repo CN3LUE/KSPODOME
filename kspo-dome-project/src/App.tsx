@@ -1389,7 +1389,7 @@ export default function App() {
 
     const unsubscribe = onSnapshot(nearbyQuery, (snapshot) => {
       const sharedCharacters = snapshot.docs.map(characterDoc => {
-        let serverCharacter = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
+        let serverCharacter: any = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
         const pendingBest = bestScoreOverridesRef.current.get(characterDoc.id);
         if (pendingBest) {
           const serverRunBest = Number((serverCharacter as any).runBest || 0);
@@ -2123,7 +2123,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const charactersRef = useRef(characters);
   const dragDistanceRef = useRef(0);
   const lastPointerRef = useRef({ x: 0, y: 0 });
-  const activePointersRef = useRef(new Map());
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef(null);
   
   const [transform, setTransform] = useState({ x: -600, y: -600, scale: 0.85 });
@@ -2390,7 +2390,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     e.currentTarget.setPointerCapture?.(e.pointerId);
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointersRef.current.size >= 2) {
-      const [first, second] = Array.from(activePointersRef.current.values()).slice(0, 2);
+      const [first, second] = (Array.from(activePointersRef.current.values()) as Array<{ x: number; y: number }>).slice(0, 2);
       const rect = containerRef.current.getBoundingClientRect();
       const centerX = ((first.x + second.x) / 2) - rect.left;
       const centerY = ((first.y + second.y) / 2) - rect.top;
@@ -2416,7 +2416,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     }
 
     if (activePointersRef.current.size >= 2 && pinchRef.current) {
-      const [first, second] = Array.from(activePointersRef.current.values()).slice(0, 2);
+      const [first, second] = (Array.from(activePointersRef.current.values()) as Array<{ x: number; y: number }>).slice(0, 2);
       const rect = containerRef.current.getBoundingClientRect();
       const centerX = ((first.x + second.x) / 2) - rect.left;
       const centerY = ((first.y + second.y) / 2) - rect.top;
@@ -2466,7 +2466,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     activePointersRef.current.delete(e.pointerId);
     pinchRef.current = null;
     if (activePointersRef.current.size === 1) {
-      const remaining = Array.from(activePointersRef.current.values())[0];
+      const remaining = (Array.from(activePointersRef.current.values()) as Array<{ x: number; y: number }>)[0];
       lastPointerRef.current = remaining;
       setDragStart({ x: remaining.x - transformRef.current.x, y: remaining.y - transformRef.current.y });
       setIsDragging(true);
