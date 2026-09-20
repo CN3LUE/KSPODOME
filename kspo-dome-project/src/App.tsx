@@ -2281,6 +2281,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       const feverUntil = now + 5000;
       feverClickRef.current.set(characterId, { count: 0, lastAt: now });
       setFeverStates(previousStates => ({ ...previousStates, [characterId]: feverUntil }));
+      // Firestore에 종료 시각을 공유해 주변의 다른 접속자 화면에도 Fever 효과가 보이게 합니다.
+      setDoc(doc(firebaseDb, 'characters', characterId), { feverUntil }, { merge: true }).catch(error => {
+        console.error('Fever state share failed:', error);
+      });
       window.setTimeout(() => {
         setFeverStates(previousStates => {
           if (Number(previousStates[characterId] || 0) > Date.now()) return previousStates;
@@ -2716,7 +2720,9 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             const isMine = char.id === myCharacterId && Boolean(currentUserUid) && char.ownerUid === currentUserUid;
             // 일반 사용자는 방향키/방향 패드로 이동하고, 드래그 이동은 관리자 편집 모드에서만 허용합니다.
             const canEdit = isAdmin && isPositionEditMode;
-            const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
+            const localFeverUntil = Number(feverStates[char.id] || 0);
+            const sharedFeverUntil = Number(char.feverUntil || 0);
+            const isFever = Date.now() < Math.max(localFeverUntil, sharedFeverUntil);
             const isResting = char.restUntil && Date.now() < char.restUntil;
             const chatMessage = (char.ownerUid ? chatMessages[char.ownerUid] : null)
               || Object.values(chatMessages).find((message: any) => message?.characterId === char.id);
@@ -2769,7 +2775,6 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                 <div className="relative" id={`char-wrapper-${char.id}`}>
                   <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : isFever ? 'sepia(0.25) saturate(2) drop-shadow(0 0 8px #ff2020) drop-shadow(0 0 18px #ff0000)' : undefined, transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
                     {isFever && !isResting && <span className="fever-aura" aria-hidden="true" />}
-                    {isFever && !isResting && <span className="fever-text absolute -top-7 left-1/2 -translate-x-1/2 z-[2] whitespace-nowrap text-[10px]">🔥 FEVER TIME!</span>}
                     <div className="relative z-[1] inline-flex items-center justify-center pointer-events-none">
                       {char.imageUrl ? (
                         <img src={char.imageUrl} alt={char.name} style={{ maxHeight: isMine ? '60px' : '40px', maxWidth: isMine ? '60px' : '40px', imageRendering: 'pixelated' }} className="object-contain" />
