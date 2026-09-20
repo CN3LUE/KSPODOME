@@ -205,9 +205,11 @@ const globalStyles = `
   .jump-once-0 { animation: fluidJump 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transform-origin: bottom center; }
   .jump-once-1 { animation: doubleBounce 1.0s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transform-origin: bottom center; }
 
-  .fever-glow { filter: drop-shadow(0 0 10px #ff0000) drop-shadow(0 0 20px #ff0000); }
+  .fever-glow { filter: sepia(0.25) saturate(2) drop-shadow(0 0 8px #ff2020) drop-shadow(0 0 18px #ff0000); }
+  .fever-aura { position: absolute; inset: -8px; border-radius: 9999px; pointer-events: none; z-index: 0; background: radial-gradient(circle, rgba(255,60,60,0.48) 0%, rgba(255,0,0,0.22) 48%, rgba(255,0,0,0) 72%); box-shadow: 0 0 14px 6px rgba(255,0,0,0.52); animation: feverAuraPulse 0.55s ease-in-out infinite alternate; }
   .fever-text { color: #ff0000; font-weight: bold; text-shadow: 1px 1px 0px #fff, -1px -1px 0px #fff, 1px -1px 0px #fff, -1px 1px 0px #fff; animation: feverPulse 0.5s infinite alternate; }
   @keyframes feverPulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+  @keyframes feverAuraPulse { from { opacity: 0.58; transform: scale(0.88); } to { opacity: 1; transform: scale(1.18); } }
 `;
 
 const MAX_CAPACITY = 15000;
@@ -2727,8 +2729,13 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   if (!isFever) {
                     setClickCounts(prev => {
                       const now = Date.now();
-                      const history = (prev[char.id] || []).filter(t => now - t < 2000);
-                      history.push(now);
+                      const previousHistory = prev[char.id] || [];
+                      const lastClickAt = previousHistory[previousHistory.length - 1] || 0;
+                      // 전체 횟수를 2초 안에 채울 필요 없이, 클릭 사이가 1.2초 이상
+                      // 끊기지 않는 연속 클릭이면 계속 누적합니다.
+                      const history = now - lastClickAt <= 1200
+                        ? [...previousHistory, now]
+                        : [now];
                       if (history.length >= 10) {
                         setFeverStates(fs => ({ ...fs, [char.id]: now + 5000 }));
                         setTimeout(() => { setFeverStates(fs => { const n = {...fs}; if(n[char.id]<=Date.now()) delete n[char.id]; return n; }); }, 5000);
@@ -2755,8 +2762,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   </div>
                 )}
                 <div className="relative" id={`char-wrapper-${char.id}`}>
-                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : undefined, transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
-                    <div className="relative inline-flex items-center justify-center pointer-events-none">
+                  <div className={`${isResting ? '' : `jump-motion-${char.motionType || 0}`} flex items-end justify-center relative ${isFever && !isResting ? 'fever-glow' : ''}`} style={{ '--duration': `${char.duration}s`, '--delay': `${char.delay}s`, width: isMine ? '60px' : '40px', height: isMine ? '60px' : '40px', filter: isResting ? 'grayscale(100%) opacity(50%)' : isFever ? 'sepia(0.25) saturate(2) drop-shadow(0 0 8px #ff2020) drop-shadow(0 0 18px #ff0000)' : undefined, transform: isResting ? 'translateY(0)' : undefined } as React.CSSProperties}>
+                    {isFever && !isResting && <span className="fever-aura" aria-hidden="true" />}
+                    {isFever && !isResting && <span className="fever-text absolute -top-7 left-1/2 -translate-x-1/2 z-[2] whitespace-nowrap text-[10px]">🔥 FEVER TIME!</span>}
+                    <div className="relative z-[1] inline-flex items-center justify-center pointer-events-none">
                       {char.imageUrl ? (
                         <img src={char.imageUrl} alt={char.name} style={{ maxHeight: isMine ? '60px' : '40px', maxWidth: isMine ? '60px' : '40px', imageRendering: 'pixelated' }} className="object-contain" />
                       ) : (
