@@ -2062,8 +2062,14 @@ function Step1Create({
 
 function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpdatePosition, onDeleteCharacter, onClaimCharacter, sysStageImg, sysFanImg, onAddJumps, onResetWorld, onShowConfirm, onUpdateBestScore, onViewportChange, chatMessages, onSendChat, mobileControlsOpen }) {
   const WORLD_SIZE = 3000;
+  const CHARACTER_MOVE_SPEED = 210;
   const containerRef = useRef(null);
   const rafRef = useRef(null);
+  const movementRafRef = useRef(null);
+  const movementLastTimeRef = useRef(0);
+  const movementLastRenderRef = useRef(0);
+  const movementKeysRef = useRef({ up: false, down: false, left: false, right: false });
+  const charactersRef = useRef(characters);
   const dragDistanceRef = useRef(0);
   const lastPointerRef = useRef({ x: 0, y: 0 });
   const activePointersRef = useRef(new Map());
@@ -2077,6 +2083,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [hoveredChar, setHoveredChar] = useState(null);
   const [draggingCharId, setDraggingCharId] = useState(null);
   const [isPositionEditMode, setIsPositionEditMode] = useState(false);
+  const [isCharacterWalking, setIsCharacterWalking] = useState(false);
 
   const [clickCounts, setClickCounts] = useState({});
   const [feverStates, setFeverStates] = useState({});
@@ -2168,6 +2175,137 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
     [characters, myCharacterId, currentUserUid]
   );
   const hasMyCharacter = Boolean(myCharacter);
+
+  useEffect(() => {
+    charactersRef.current = characters;
+  }, [characters]);
+
+  const keepCharacterInView = useCallback((worldX, worldY) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setTransform(previous => {
+      const screenX = previous.x + worldX * previous.scale;
+      const screenY = previous.y + worldY * previous.scale;
+      const safeMarginX = Math.min(110, rect.width * 0.24);
+      const safeMarginY = Math.min(120, rect.height * 0.24);
+      let nextX = previous.x;
+      let nextY = previous.y;
+
+      if (screenX < safeMarginX) nextX += safeMarginX - screenX;
+      else if (screenX > rect.width - safeMarginX) nextX -= screenX - (rect.width - safeMarginX);
+      if (screenY < safeMarginY) nextY += safeMarginY - screenY;
+      else if (screenY > rect.height - safeMarginY) nextY -= screenY - (rect.height - safeMarginY);
+
+      if (nextX === previous.x && nextY === previous.y) return previous;
+      const next = clampTransform({ ...previous, x: nextX, y: nextY });
+      transformRef.current = next;
+      return next;
+    });
+  }, [clampTransform]);
+
+  // PC 방향키/WASD와 모바일 방향 패드가 함께 사용하는 캐릭터 이동 루프입니다.
+  useEffect(() => {
+    if (!hasMyCharacter || !myCharacterId) return;
+
+    const editableTarget = (target) => {
+      const element = target instanceof HTMLElement ? target : null;
+      return Boolean(element?.closest('input, textarea, select, button, [contenteditable="true"]'));
+    };
+    const directionForKey = (key) => ({
+      ArrowUp: 'up', w: 'up', W: 'up',
+      ArrowDown: 'down', s: 'down', S: 'down',
+      ArrowLeft: 'left', a: 'left', A: 'left',
+      ArrowRight: 'right', d: 'right', D: 'right'
+    }[key]);
+
+    const onKeyDown = (event) => {
+      const direction = directionForKey(event.key);
+      if (!direction || editableTarget(event.target)) return;
+      event.preventDefault();
+      movementKeysRef.current[direction] = true;
+    };
+    const onKeyUp = (event) => {
+      const direction = directionForKey(event.key);
+      if (!direction) return;
+      event.preventDefault();
+      movementKeysRef.current[direction] = false;
+    };
+    const stopAllDirections = () => {
+      movementKeysRef.current = { up: false, down: false, left: false, right: false };
+    };
+
+    window.addEventListener('keydown', onKeyDown, { passive: false });
+    window.addEventListener('keyup', onKeyUp, { passive: false });
+    window.addEventListener('blur', stopAllDirections);
+
+    const moveFrame = (now) => {
+      const previousTime = movementLastTimeRef.current || now;
+      const elapsed = Math.min(0.05, (now - previousTime) / 1000);
+      movementLastTimeRef.current = now;
+      const keys = movementKeysRef.current;
+      let dx = Number(keys.right) - Number(keys.left);
+      let dy = Number(keys.down) - Number(keys.up);
+      const moving = dx !== 0 || dy !== 0;
+
+      if (moving) {
+        const length = Math.hypot(dx, dy) || 1;
+        dx /= length;
+        dy /= length;
+        // 약 30fps로 React 위치를 갱신해 모바일에서도 부드럽고 가볍게 동작합니다.
+        if (now - movementLastRenderRef.current >= 30) {
+          const character = charactersRef.current.find(item => item.id === myCharacterId);
+          if (character) {
+            const nextX = Math.max(50, Math.min(WORLD_SIZE - 50, character.x + dx * CHARACTER_MOVE_SPEED * elapsed * 2));
+            const nextY = Math.max(50, Math.min(WORLD_SIZE - 50, character.y + dy * CHARACTER_MOVE_SPEED * elapsed * 2));
+            onUpdatePosition(myCharacterId, nextX, nextY);
+            keepCharacterInView(nextX, nextY);
+          }
+          movementLastRenderRef.current = now;
+        }
+      }
+      setIsCharacterWalking(previous => previous === moving ? previous : moving);
+      movementRafRef.current = requestAnimationFrame(moveFrame);
+    };
+
+    movementLastTimeRef.current = performance.now();
+    movementRafRef.current = requestAnimationFrame(moveFrame);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', stopAllDirections);
+      if (movementRafRef.current) cancelAnimationFrame(movementRafRef.current);
+      movementRafRef.current = null;
+      stopAllDirections();
+      setIsCharacterWalking(false);
+    };
+  }, [hasMyCharacter, myCharacterId, onUpdatePosition, keepCharacterInView]);
+
+  const setMobileDirection = useCallback((direction, pressed) => {
+    movementKeysRef.current[direction] = pressed;
+  }, []);
+
+  const mobileDirectionButtonProps = useCallback((direction) => ({
+    onPointerDown: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setMobileDirection(direction, true);
+    },
+    onPointerUp: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setMobileDirection(direction, false);
+    },
+    onPointerCancel: (event) => {
+      event.stopPropagation();
+      setMobileDirection(direction, false);
+    },
+    onPointerLeave: (event) => {
+      if (event.buttons === 0) setMobileDirection(direction, false);
+    },
+    onContextMenu: (event) => event.preventDefault()
+  }), [setMobileDirection]);
 
   const handlePointerDown = (e) => {
     if (draggingCharId) return;
@@ -2349,7 +2487,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
           {filteredChars.map((char) => {
             const isMine = char.id === myCharacterId && Boolean(currentUserUid) && char.ownerUid === currentUserUid;
-            const canEdit = isMine || (isAdmin && isPositionEditMode);
+            // 일반 사용자는 방향키/방향 패드로 이동하고, 드래그 이동은 관리자 편집 모드에서만 허용합니다.
+            const canEdit = isAdmin && isPositionEditMode;
             const isFever = feverStates[char.id] && Date.now() < feverStates[char.id];
             const isResting = char.restUntil && Date.now() < char.restUntil;
             const chatMessage = (char.ownerUid ? chatMessages[char.ownerUid] : null)
@@ -2504,6 +2643,25 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             );
           })}
         </div>
+
+        {hasMyCharacter && !isRunGameOpen && !isRoofGameOpen && (
+          <div
+            className="sm:hidden absolute left-3 bottom-3 z-[200] grid grid-cols-3 grid-rows-3 gap-1 select-none"
+            style={{ touchAction: 'none' }}
+            onPointerDown={(event) => event.stopPropagation()}
+            aria-label="캐릭터 이동 방향 패드"
+          >
+            <span></span>
+            <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▲</button>
+            <span></span>
+            <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">◀</button>
+            <div className={`w-12 h-12 flex items-center justify-center border-2 border-[#808080] bg-[#c0c0c0]/90 text-[10px] font-bold text-[#000080] ${isCharacterWalking ? 'animate-pulse' : ''}`}>MOVE</div>
+            <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▶</button>
+            <span></span>
+            <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▼</button>
+            <span></span>
+          </div>
+        )}
       </div>
       
       <div className="bg-[#c0c0c0] px-2 py-0.5 border-t border-[var(--win-border-white)] flex justify-between text-[11px] text-gray-700">
