@@ -1027,6 +1027,14 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       if (player.x < -PLAYER_SIZE) player.x = GAME_WIDTH; if (player.x > GAME_WIDTH) player.x = -PLAYER_SIZE;
       
       player.vy += .60; const oldBottom = player.y + PLAYER_SIZE; player.y += player.vy;
+
+      // 캐릭터가 화면 아래 경계를 완전히 넘으면 즉시 추락 처리합니다.
+      // 이전에는 화면 밖 발판에도 착지할 수 있어 다시 튀어 올라오는 문제가 있었습니다.
+      const playerScreenY = player.y - camera;
+      if (player.vy > 0 && playerScreenY > GAME_HEIGHT - PLAYER_SIZE + 8) {
+        finish();
+        return;
+      }
       
       platforms.forEach((p) => { 
         if (p.type === "moving") { 
@@ -1038,7 +1046,9 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       
       if (player.vy > 0) {
         for (const p of platforms) {
-          const landing = !p.used && oldBottom <= p.y + 12 && player.y + PLAYER_SIZE >= p.y && player.x + PLAYER_SIZE - 8 > p.x && player.x + 8 < p.x + p.w;
+          const platformScreenY = p.y - camera;
+          const platformIsVisible = platformScreenY >= -12 && platformScreenY <= GAME_HEIGHT;
+          const landing = platformIsVisible && !p.used && oldBottom <= p.y + 12 && player.y + PLAYER_SIZE >= p.y && player.x + PLAYER_SIZE - 8 > p.x && player.x + 8 < p.x + p.w;
           if (landing) { player.vy = p.type === "boost" ? -16.5 : -13.2; if (p.type === "fragile") p.used = true; break; }
         }
       }
@@ -1053,7 +1063,7 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
 
       best = Math.max(best, Math.floor(Math.max(0, -camera / PIXELS_PER_METER)));
       if (best !== reported) { reported = best; setScore(best); }
-      if (player.y > camera + GAME_HEIGHT + 60) { finish(); return; }
+      if (player.y - camera > GAME_HEIGHT - PLAYER_SIZE + 8) { finish(); return; }
       }
       if (simulationSteps >= 6) frameAccumulator = 0;
 
@@ -1798,28 +1808,37 @@ export default function App() {
 
   const handleAddJumps = useCallback((id, amount, _stopAtRestBoundary = false) => {
     const now = Date.now();
-    let savedChanges = null;
-    setWorldCharacters(prev => prev.map(c => {
-      if (c.id !== id) return c;
+    const currentCharacter = worldCharactersRef.current.find(character => character.id === id);
+    if (!currentCharacter) return;
 
-      const currentJumps = c.jumpsCount || 0;
-      const requestedJumps = currentJumps + amount;
-      const crossedRestBoundary = Math.floor(requestedJumps / 50) > Math.floor(currentJumps / 50);
-      savedChanges = {
-        jumpsCount: requestedJumps,
-        passiveBaseJumps: requestedJumps,
-        passiveStartedAtMs: now,
-        restUntil: crossedRestBoundary ? now + 10000 : (Number(c.restUntil) > now ? c.restUntil : null),
-        updatedAtMs: now
-      };
-      return { ...c, ...savedChanges };
-    }));
+    const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+    if (safeAmount <= 0) return;
+    const currentJumps = Number(currentCharacter.jumpsCount || 0);
+    const requestedJumps = currentJumps + safeAmount;
+    const crossedRestBoundary = Math.floor(requestedJumps / 50) > Math.floor(currentJumps / 50);
+    const savedChanges = {
+      jumpsCount: requestedJumps,
+      passiveBaseJumps: requestedJumps,
+      passiveStartedAtMs: now,
+      restUntil: crossedRestBoundary ? now + 10000 : (Number(currentCharacter.restUntil) > now ? currentCharacter.restUntil : null),
+      updatedAtMs: now
+    };
+
+    // 연속 보상도 직전 값을 기준으로 계산하도록 Ref와 화면 상태를 동시에 갱신합니다.
+    worldCharactersRef.current = worldCharactersRef.current.map(character =>
+      character.id === id ? { ...character, ...savedChanges } : character
+    );
+    setWorldCharacters(previous => previous.map(character =>
+      character.id === id ? { ...character, ...savedChanges } : character
+    ));
+
     if (!id.startsWith('preset-')) {
-      window.setTimeout(() => {
-        if (savedChanges) updateDoc(doc(firebaseDb, 'characters', id), savedChanges).catch(() => {});
-      }, 0);
+      setDoc(doc(firebaseDb, 'characters', id), savedChanges, { merge: true }).catch(error => {
+        console.error('Jump reward save failed:', error);
+        showModal('에바뛰 저장 실패', '획득한 에바뛰를 저장하지 못했습니다. Firestore characters 수정 권한을 확인해 주세요.', null, false);
+      });
     }
-  }, []);
+  }, [showModal]);
 
   const handleSendChat = useCallback(async (rawText) => {
     const user = firebaseAuth.currentUser;
