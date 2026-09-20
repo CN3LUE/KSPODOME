@@ -1390,20 +1390,29 @@ export default function App() {
       setWorldCharacters(previousCharacters => {
         const stableSharedCharacters = sharedCharacters.map(serverCharacter => {
           const localCharacter = previousCharacters.find(character => character.id === serverCharacter.id);
-          if (
-            serverCharacter.id === myCharacterId
-            && localCharacter
-            && (localCharacter.updatedAtMs || 0) > ((serverCharacter as any).updatedAtMs || 0)
-          ) {
+          if (serverCharacter.id === myCharacterId && localCharacter) {
+            // 위치 저장 직후 도착하는 Firestore 스냅샷의 jumpsCount는 마지막 저장값일 수 있습니다.
+            // 위치와 진행도를 같은 updatedAtMs로 비교하면 화면의 계산된 횟수가 잠깐 과거 값으로
+            // 돌아가므로, 내 캐릭터의 현재 진행도 필드는 위치 스냅샷과 별도로 보존합니다.
+            const serverHasProgressClock = Number.isFinite((serverCharacter as any).passiveStartedAtMs)
+              && Number.isFinite((serverCharacter as any).passiveBaseJumps);
+            const serverCalculatedJumps = serverHasProgressClock
+              ? (serverCharacter as any).passiveBaseJumps
+                + Math.max(0, Math.floor((Date.now() - (serverCharacter as any).passiveStartedAtMs) / 60000))
+              : Number((serverCharacter as any).jumpsCount || 0);
             return {
               ...serverCharacter,
-              jumpsCount: localCharacter.jumpsCount,
+              jumpsCount: Math.max(Number(localCharacter.jumpsCount || 0), serverCalculatedJumps),
               restUntil: localCharacter.restUntil,
               lastRestBoundary: localCharacter.lastRestBoundary,
-              passiveBaseJumps: localCharacter.passiveBaseJumps,
-              passiveStartedAtMs: localCharacter.passiveStartedAtMs,
+              passiveBaseJumps: Number.isFinite((serverCharacter as any).passiveBaseJumps)
+                ? (serverCharacter as any).passiveBaseJumps
+                : localCharacter.passiveBaseJumps,
+              passiveStartedAtMs: Number.isFinite((serverCharacter as any).passiveStartedAtMs)
+                ? (serverCharacter as any).passiveStartedAtMs
+                : localCharacter.passiveStartedAtMs,
               animationStartedAtMs: localCharacter.animationStartedAtMs,
-              updatedAtMs: localCharacter.updatedAtMs
+              updatedAtMs: Math.max(Number(localCharacter.updatedAtMs || 0), Number((serverCharacter as any).updatedAtMs || 0))
             };
           }
           return serverCharacter;
@@ -2646,20 +2655,16 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
         {hasMyCharacter && !isRunGameOpen && !isRoofGameOpen && (
           <div
-            className="sm:hidden absolute left-3 bottom-3 z-[200] grid grid-cols-3 grid-rows-3 gap-1 select-none"
-            style={{ touchAction: 'none' }}
+            className="sm:hidden absolute left-3 z-[200] w-[106px] h-[106px] rounded-full select-none border-2 border-[#707070] bg-[#c0c0c0]/90 shadow-[2px_2px_0_rgba(0,0,0,0.45)]"
+            style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
             onPointerDown={(event) => event.stopPropagation()}
             aria-label="캐릭터 이동 방향 패드"
           >
-            <span></span>
-            <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▲</button>
-            <span></span>
-            <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">◀</button>
-            <div className={`w-12 h-12 flex items-center justify-center border-2 border-[#808080] bg-[#c0c0c0]/90 text-[10px] font-bold text-[#000080] ${isCharacterWalking ? 'animate-pulse' : ''}`}>MOVE</div>
-            <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▶</button>
-            <span></span>
-            <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="win95-button !p-0 w-12 h-12 text-xl font-bold opacity-90">▼</button>
-            <span></span>
+            <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="absolute top-[3px] left-1/2 -translate-x-1/2 w-11 h-11 flex items-start justify-center pt-1 text-xl font-bold text-[#202020] active:text-[#000080]">▲</button>
+            <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="absolute left-[3px] top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-start pl-1 text-xl font-bold text-[#202020] active:text-[#000080]">◀</button>
+            <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="absolute right-[3px] top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-end pr-1 text-xl font-bold text-[#202020] active:text-[#000080]">▶</button>
+            <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-11 h-11 flex items-end justify-center pb-1 text-xl font-bold text-[#202020] active:text-[#000080]">▼</button>
+            <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-[#808080] bg-[#a8a8a8] shadow-inner pointer-events-none ${isCharacterWalking ? 'bg-[#000080]' : ''}`}></div>
           </div>
         )}
       </div>
