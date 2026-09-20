@@ -595,10 +595,11 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         if (spawnPit) {
           // 대형 구덩이는 ZONE 3(장애물 100개)부터 등장합니다.
           const isDoubleJumpPit = clearedObstacles >= 100 && Math.random() < .45;
+          const normalPitWidth = 92 + Math.random() * 48;
           const pitWidth = isDoubleJumpPit
-            // 최대 600px로 제한하면서 2단 점프가 필요한 충분한 폭을 유지합니다.
-            ? 540 + Math.random() * 60
-            : 92 + Math.random() * 48;
+            // 일반 구덩이의 2.5~3배이며 어떤 경우에도 3배를 넘지 않습니다.
+            ? normalPitWidth * (2.5 + Math.random() * .5)
+            : normalPitWidth;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth, isDoubleJumpPit });
           // 긴 구덩이 위나 착지 직후에 다른 장애물이 겹치지 않도록 안전 구간을 둡니다.
           const pitSpawnSpeed = isDoubleJumpPit ? Math.min(speed, 12) : speed;
