@@ -776,7 +776,6 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       className="game-interaction-surface fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4"
       onContextMenu={(event) => event.preventDefault()}
       onDragStart={(event) => event.preventDefault()}
-      onSelectStart={(event) => event.preventDefault()}
     >
       <div className="win95-window w-full max-w-[720px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
@@ -1101,7 +1100,6 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
       className="game-interaction-surface fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4"
       onContextMenu={(event) => event.preventDefault()}
       onDragStart={(event) => event.preventDefault()}
-      onSelectStart={(event) => event.preventDefault()}
     >
       <div className="win95-window w-full max-w-[420px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
