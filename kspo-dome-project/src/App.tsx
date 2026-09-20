@@ -1178,6 +1178,7 @@ export default function App() {
   const [hasItem, setHasItem] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [sessionRestoreChecked, setSessionRestoreChecked] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminLoginError, setAdminLoginError] = useState('');
@@ -1379,6 +1380,54 @@ export default function App() {
     setAdminPassword('');
   };
 
+  // 이전에 만든 내 캐릭터가 이 브라우저에 저장되어 있으면 소유권과 존재 여부를
+  // Firestore에서 확인한 뒤 캐릭터 만들기 화면을 건너뛰고 곧바로 광장에 입장합니다.
+  useEffect(() => {
+    if (!authReady || !firebaseAuth.currentUser) return;
+    let cancelled = false;
+
+    const restoreSavedCharacter = async () => {
+      const savedCharacterId = window.localStorage.getItem('kspo-my-character-id');
+      if (!savedCharacterId) {
+        if (!cancelled) setSessionRestoreChecked(true);
+        return;
+      }
+
+      try {
+        const characterSnapshot = await getDoc(doc(firebaseDb, 'characters', savedCharacterId));
+        const savedCharacter = characterSnapshot.exists() ? characterSnapshot.data() : null;
+        const ownsCharacter = savedCharacter?.ownerUid === firebaseAuth.currentUser?.uid;
+
+        if (!cancelled && savedCharacter && ownsCharacter) {
+          const restoredCharacter = { ...savedCharacter, id: savedCharacterId, isUser: true };
+          setMyCharacterId(savedCharacterId);
+          setWorldCharacters(previous => {
+            const withoutDuplicate = previous.filter(character => character.id !== savedCharacterId);
+            return [...withoutDuplicate, restoredCharacter];
+          });
+          if (Number.isFinite(savedCharacter.x) && Number.isFinite(savedCharacter.y)) {
+            setViewportCell({
+              x: Math.max(0, Math.min(MAP_CELL_COUNT - 1, Math.floor(savedCharacter.x / MAP_CELL_SIZE))),
+              y: Math.max(0, Math.min(MAP_CELL_COUNT - 1, Math.floor(savedCharacter.y / MAP_CELL_SIZE)))
+            });
+          }
+          setStep(2);
+        } else if (!cancelled) {
+          window.localStorage.removeItem('kspo-my-character-id');
+          setMyCharacterId(null);
+        }
+      } catch (error) {
+        console.error('Saved character restore failed:', error);
+        // 일시적인 네트워크 오류라면 캐시를 지우지 않고 다음 접속 때 다시 시도합니다.
+      } finally {
+        if (!cancelled) setSessionRestoreChecked(true);
+      }
+    };
+
+    restoreSavedCharacter();
+    return () => { cancelled = true; };
+  }, [authReady]);
+
   // 관리자가 옮긴 기본 예시 캐릭터 배치를 모든 접속자에게 공유합니다.
   useEffect(() => {
     if (!authReady || !firebaseAuth.currentUser) return;
@@ -1400,9 +1449,6 @@ export default function App() {
   useEffect(() => {
     // Firestore 규칙은 로그인 사용자를 기준으로 하므로 인증이 끝난 뒤에만 조회합니다.
     if (!authReady || !firebaseAuth.currentUser) return;
-
-    const savedMyCharacterId = window.localStorage.getItem('kspo-my-character-id');
-    if (savedMyCharacterId) setMyCharacterId(savedMyCharacterId);
 
     const nearbyCellIds = [];
     for (let y = viewportCell.y - 1; y <= viewportCell.y + 1; y += 1) {
@@ -1915,7 +1961,7 @@ export default function App() {
             </div>
           )}
           
-          {step === 1 && (
+          {sessionRestoreChecked && step === 1 && (
             <button onClick={() => setStep(2)} className="win95-button font-bold py-1 px-4 text-sm ml-4 h-[30px] whitespace-nowrap">
               KSPO DOME으로 가기 🚀
             </button>
@@ -1926,7 +1972,12 @@ export default function App() {
       </header>
 
       <main className="flex-1 relative w-full h-full p-1 sm:p-2 flex items-start sm:items-center justify-center min-h-0 overflow-hidden">
-        {step === 1 ? (
+        {!sessionRestoreChecked ? (
+          <div className="win95-window w-full max-w-sm self-center">
+            <div className="win95-titlebar"><span>사용자_확인.exe</span></div>
+            <div className="p-6 text-center font-bold">이전에 만든 캐릭터를 확인하는 중...</div>
+          </div>
+        ) : step === 1 ? (
           <Step1Create 
             characterName={characterName} setCharacterName={setCharacterName}
             characterImage={characterImage} setCharacterImage={setCharacterImage}
@@ -2701,7 +2752,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         {isResting ? '휴식중..' : '+1 👆'}
                       </button>
                       <a
-                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #EVERYBODY_JUMP`)}`}
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`내 ${char.name}이(가) KSPO DOME 랜선 에바뛰 광장에서 ${char.jumpsCount.toLocaleString()}회째 뛰는 중! 🏃‍♂️💨 같이 뛰어주세요! ${window.location.href} #에바뛰 #랜선에바뛰`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onPointerDown={(e) => e.stopPropagation()}
