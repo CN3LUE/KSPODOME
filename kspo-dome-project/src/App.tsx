@@ -2088,6 +2088,8 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const movementLastTimeRef = useRef(0);
   const movementLastRenderRef = useRef(0);
   const movementKeysRef = useRef({ up: false, down: false, left: false, right: false });
+  const movementJoystickRef = useRef({ x: 0, y: 0 });
+  const joystickPointerIdRef = useRef(null);
   const charactersRef = useRef(characters);
   const dragDistanceRef = useRef(0);
   const lastPointerRef = useRef({ x: 0, y: 0 });
@@ -2103,6 +2105,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [draggingCharId, setDraggingCharId] = useState(null);
   const [isPositionEditMode, setIsPositionEditMode] = useState(false);
   const [isCharacterWalking, setIsCharacterWalking] = useState(false);
+  const [joystickOffset, setJoystickOffset] = useState({ x: 0, y: 0 });
 
   const [clickCounts, setClickCounts] = useState({});
   const [feverStates, setFeverStates] = useState({});
@@ -2263,14 +2266,16 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       const elapsed = Math.min(0.05, (now - previousTime) / 1000);
       movementLastTimeRef.current = now;
       const keys = movementKeysRef.current;
-      let dx = Number(keys.right) - Number(keys.left);
-      let dy = Number(keys.down) - Number(keys.up);
+      let dx = Number(keys.right) - Number(keys.left) + movementJoystickRef.current.x;
+      let dy = Number(keys.down) - Number(keys.up) + movementJoystickRef.current.y;
       const moving = dx !== 0 || dy !== 0;
 
       if (moving) {
         const length = Math.hypot(dx, dy) || 1;
-        dx /= length;
-        dy /= length;
+        if (length > 1) {
+          dx /= length;
+          dy /= length;
+        }
         // 약 30fps로 React 위치를 갱신해 모바일에서도 부드럽고 가볍게 동작합니다.
         if (now - movementLastRenderRef.current >= 30) {
           const character = charactersRef.current.find(item => item.id === myCharacterId);
@@ -2296,35 +2301,59 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
       if (movementRafRef.current) cancelAnimationFrame(movementRafRef.current);
       movementRafRef.current = null;
       stopAllDirections();
+      movementJoystickRef.current = { x: 0, y: 0 };
+      joystickPointerIdRef.current = null;
+      setJoystickOffset({ x: 0, y: 0 });
       setIsCharacterWalking(false);
     };
   }, [hasMyCharacter, myCharacterId, onUpdatePosition, keepCharacterInView]);
 
-  const setMobileDirection = useCallback((direction, pressed) => {
-    movementKeysRef.current[direction] = pressed;
+  const updateJoystickFromPointer = useCallback((event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawX = event.clientX - (rect.left + rect.width / 2);
+    const rawY = event.clientY - (rect.top + rect.height / 2);
+    const distance = Math.hypot(rawX, rawY);
+    const maxVisualDistance = 27;
+    const deadZone = 7;
+
+    if (distance <= deadZone) {
+      movementJoystickRef.current = { x: 0, y: 0 };
+      setJoystickOffset({ x: 0, y: 0 });
+      return;
+    }
+
+    const limitedDistance = Math.min(maxVisualDistance, distance);
+    const unitX = rawX / distance;
+    const unitY = rawY / distance;
+    const strength = Math.min(1, (distance - deadZone) / (maxVisualDistance - deadZone));
+    movementJoystickRef.current = { x: unitX * strength, y: unitY * strength };
+    setJoystickOffset({ x: unitX * limitedDistance, y: unitY * limitedDistance });
   }, []);
 
-  const mobileDirectionButtonProps = useCallback((direction) => ({
-    onPointerDown: (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-      setMobileDirection(direction, true);
-    },
-    onPointerUp: (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setMobileDirection(direction, false);
-    },
-    onPointerCancel: (event) => {
-      event.stopPropagation();
-      setMobileDirection(direction, false);
-    },
-    onPointerLeave: (event) => {
-      if (event.buttons === 0) setMobileDirection(direction, false);
-    },
-    onContextMenu: (event) => event.preventDefault()
-  }), [setMobileDirection]);
+  const handleJoystickPointerDown = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    joystickPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateJoystickFromPointer(event);
+  }, [updateJoystickFromPointer]);
+
+  const handleJoystickPointerMove = useCallback((event) => {
+    if (joystickPointerIdRef.current !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateJoystickFromPointer(event);
+  }, [updateJoystickFromPointer]);
+
+  const releaseJoystick = useCallback((event) => {
+    if (joystickPointerIdRef.current !== null && event.pointerId !== joystickPointerIdRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    joystickPointerIdRef.current = null;
+    movementJoystickRef.current = { x: 0, y: 0 };
+    setJoystickOffset({ x: 0, y: 0 });
+  }, []);
 
   const handlePointerDown = (e) => {
     if (draggingCharId) return;
@@ -2667,10 +2696,15 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
 
       {myCharacterId && !isRunGameOpen && !isRoofGameOpen && (
         <div
-          className="mobile-character-dpad fixed left-4 z-[8000] w-[108px] h-[108px] select-none drop-shadow-[0_5px_5px_rgba(0,0,0,0.48)]"
+          className="mobile-character-dpad fixed right-4 z-[8000] w-[108px] h-[108px] select-none drop-shadow-[0_5px_5px_rgba(0,0,0,0.48)]"
           style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)' }}
-          onPointerDown={(event) => event.stopPropagation()}
-          aria-label="캐릭터 이동 방향 패드"
+          onPointerDown={handleJoystickPointerDown}
+          onPointerMove={handleJoystickPointerMove}
+          onPointerUp={releaseJoystick}
+          onPointerCancel={releaseJoystick}
+          onContextMenu={(event) => event.preventDefault()}
+          role="application"
+          aria-label="캐릭터 이동 조이스틱"
         >
           <svg viewBox="0 0 120 120" className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
             <defs>
@@ -2692,13 +2726,13 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
             <path d="M60 98 L51 86 H69 Z" fill="#e9e9e9" />
             <path d="M22 60 L34 51 V69 Z" fill="#e9e9e9" />
             <path d="M98 60 L86 51 V69 Z" fill="#e9e9e9" />
-            <circle cx="60" cy="60" r="14" fill={isCharacterWalking ? '#000080' : '#171a1f'} stroke="#737980" strokeWidth="2" />
-            <circle cx="56" cy="56" r="6" fill="#ffffff" fillOpacity="0.08" />
+            <circle cx="60" cy="60" r="22" fill="#0c0f13" fillOpacity="0.38" stroke="#737980" strokeWidth="1.5" />
+            <g transform={`translate(${joystickOffset.x} ${joystickOffset.y})`}>
+              <circle cx="60" cy="60" r="16" fill={isCharacterWalking ? '#000080' : '#20252b'} stroke="#050505" strokeWidth="2.5" />
+              <circle cx="60" cy="60" r="12" fill="none" stroke="#8b9198" strokeWidth="1.5" />
+              <circle cx="55" cy="55" r="5" fill="#ffffff" fillOpacity="0.16" />
+            </g>
           </svg>
-          <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="absolute top-0 left-[32px] w-11 h-[48px] appearance-none border-0 bg-transparent p-0 outline-none"></button>
-          <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="absolute left-0 top-[32px] w-[48px] h-11 appearance-none border-0 bg-transparent p-0 outline-none"></button>
-          <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="absolute right-0 top-[32px] w-[48px] h-11 appearance-none border-0 bg-transparent p-0 outline-none"></button>
-          <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="absolute bottom-0 left-[32px] w-11 h-[48px] appearance-none border-0 bg-transparent p-0 outline-none"></button>
         </div>
       )}
       
