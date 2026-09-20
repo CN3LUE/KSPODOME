@@ -480,6 +480,7 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const pits = [];
     const items = [];
     let frame = 0, clearedObstacles = 0, bonusJumps = 0, speed = 7, lastSpawn = 0, fellIntoPit = false;
+    let spawnPauseUntil = 0;
     let lastItemSpawn = 0, nextItemDelay = 360 + Math.random() * 180, done = false;
 
     const jump = () => {
@@ -498,6 +499,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       stateRef.current = 'GAMEOVER';
       setGameState(stateRef.current);
       const obstacleReward = Math.floor(clearedObstacles / OBSTACLES_PER_REWARD) * REWARD_PER_GROUP;
+      // 별 보상은 획득 순간 이미 지급되므로 종료할 때는 장애물 보상만 지급합니다.
+      // 종료 화면에는 이번 판의 전체 획득량(장애물 + 별)을 표시합니다.
       const earned = obstacleReward;
       setFinalScore(clearedObstacles);
       setReward(obstacleReward + bonusJumps);
@@ -533,11 +536,12 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
     const abyssGradient = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_HEIGHT);
     abyssGradient.addColorStop(0, "#050006");
     abyssGradient.addColorStop(1, "#6b0039");
+    // STAGE NAMES FIXED: NIGHT RUNNER / YOUNG FOREVER / COLD LOVE / RACER
     const stageThemes = [
       { name: 'NIGHT RUNNER', top: '#090f2e', bottom: '#31174b', ground: '#514579', line: '#5de4ff', glow: '#ff62c0' },
-      { name: 'SUNSET RUSH', top: '#431642', bottom: '#e05b57', ground: '#493052', line: '#ffd45f', glow: '#ff8b72' },
-      { name: 'ICE ROAD', top: '#08233d', bottom: '#287ca0', ground: '#526f93', line: '#d8fbff', glow: '#75e8ff' },
-      { name: 'DANGER ZONE', top: '#260617', bottom: '#7b123f', ground: '#41213d', line: '#ff62c0', glow: '#ff334f' }
+      { name: 'YOUNG FOREVER', top: '#f8d45a', bottom: '#f28a38', ground: '#8a5635', line: '#fff3ad', glow: '#ffd84d' },
+      { name: 'COLD LOVE', top: '#08233d', bottom: '#287ca0', ground: '#526f93', line: '#d8fbff', glow: '#75e8ff' },
+      { name: 'RACER', top: '#260617', bottom: '#7b123f', ground: '#41213d', line: '#ff62c0', glow: '#ff334f' }
     ];
     const stageGradients = stageThemes.map(theme => {
       const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
@@ -582,12 +586,23 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       const itemNearSpawnLane = items.some(item => item.x > GAME_WIDTH - 210);
       // 기록이 늘수록 간격을 더 크게 줄여 화면에 동시에 보이는 장애물 수도 증가합니다.
       const spawnInterval = Math.max(30, 92 - difficulty * 62);
-      if (!itemNearSpawnLane && frame - lastSpawn > spawnInterval) {
+      if (!itemNearSpawnLane && frame >= spawnPauseUntil && frame - lastSpawn > spawnInterval) {
         lastSpawn = frame;
         const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
         if (spawnPit) {
-          const pitWidth = 92 + Math.random() * 48;
-          pits.push({ x: GAME_WIDTH + 30, w: pitWidth });
+          // 일부 구덩이는 현재 속도에서 1단 점프 체공 거리보다 길고,
+          // 정상적인 2단 점프 거리보다는 짧게 만들어 반드시 2단 점프가 필요합니다.
+          // 고속 후반부에서는 같은 폭도 1단 점프로 지나갈 수 있으므로,
+          // 대형 구덩이는 2단 점프의 체공시간이 실제로 필요한 속도 구간에만 생성합니다.
+          const isDoubleJumpPit = clearedObstacles >= 12 && speed <= 11.5 && Math.random() < .38;
+          const pitWidth = isDoubleJumpPit
+            // 캐릭터 폭까지 감안해 1단 점프 거리(약 speed * 40)를 확실히 넘기고,
+            // 적절한 타이밍의 2단 점프 거리 안에는 들어오도록 계산합니다.
+            ? Math.min(610, Math.max(390, speed * (48 + Math.random() * 2) + PLAYER_SIZE))
+            : 92 + Math.random() * 48;
+          pits.push({ x: GAME_WIDTH + 30, w: pitWidth, isDoubleJumpPit });
+          // 긴 구덩이 위나 착지 직후에 다른 장애물이 겹치지 않도록 안전 구간을 둡니다.
+          spawnPauseUntil = frame + Math.ceil(pitWidth / speed) + (isDoubleJumpPit ? 48 : 24);
         } else {
           const availableTypes = ["barrier", "sign", "banana", "bomb"];
           if (difficulty > .10) availableTypes.push("drone");
