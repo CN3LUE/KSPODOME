@@ -567,7 +567,10 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
       speed = 7 + 11 * Math.pow(difficulty, 0.72);
       for (let i = pits.length - 1; i >= 0; i -= 1) {
         const pit = pits[i];
-        pit.x -= speed;
+        // ZONE 3~4의 빠른 속도에서도 대형 구덩이를 1단 점프로 건너지 못하도록
+        // 대형 구덩이의 화면 이동속도만 통과 가능한 범위로 제한합니다.
+        const pitTravelSpeed = pit.isDoubleJumpPit ? Math.min(speed, 12) : speed;
+        pit.x -= pitTravelSpeed;
         if (pit.x + pit.w < 0) {
           pits.splice(i, 1);
           clearedObstacles += 1;
@@ -590,17 +593,16 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         lastSpawn = frame;
         const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
         if (spawnPit) {
-          // 대형 구덩이는 1단 점프로는 부족하지만 정상적인 2단 점프로는
-          // 반드시 건널 수 있도록 중속 구간에서만 생성합니다.
-          const isDoubleJumpPit = clearedObstacles >= 8 && speed <= 12 && Math.random() < .45;
+          // 대형 구덩이는 ZONE 3(장애물 100개)부터 등장합니다.
+          const isDoubleJumpPit = clearedObstacles >= 100 && Math.random() < .45;
           const pitWidth = isDoubleJumpPit
-            // 약 49~52프레임 이동 거리: 1단(약 40프레임)보다 길고,
-            // 적절한 2단 점프(약 58~70프레임)보다 충분히 짧습니다.
-            ? Math.min(650, Math.max(380, speed * (48 + Math.random() * 3) + PLAYER_SIZE))
+            // 최대 600px로 제한하면서 2단 점프가 필요한 충분한 폭을 유지합니다.
+            ? 540 + Math.random() * 60
             : 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth, isDoubleJumpPit });
           // 긴 구덩이 위나 착지 직후에 다른 장애물이 겹치지 않도록 안전 구간을 둡니다.
-          spawnPauseUntil = frame + Math.ceil(pitWidth / speed) + (isDoubleJumpPit ? 48 : 24);
+          const pitSpawnSpeed = isDoubleJumpPit ? Math.min(speed, 12) : speed;
+          spawnPauseUntil = frame + Math.ceil(pitWidth / pitSpawnSpeed) + (isDoubleJumpPit ? 48 : 24);
         } else {
           const availableTypes = ["barrier", "sign", "banana", "bomb"];
           if (difficulty > .10) availableTypes.push("drone");
