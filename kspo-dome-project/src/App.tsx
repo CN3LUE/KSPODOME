@@ -2663,21 +2663,44 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           })}
         </div>
 
-        {myCharacterId && !isRunGameOpen && !isRoofGameOpen && (
-          <div
-            className="mobile-character-dpad absolute left-3 z-[500] w-[106px] h-[106px] rounded-full select-none border-2 border-[#303030] bg-[#c0c0c0] shadow-[3px_3px_0_rgba(0,0,0,0.6)]"
-            style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 38px)' }}
-            onPointerDown={(event) => event.stopPropagation()}
-            aria-label="캐릭터 이동 방향 패드"
-          >
-            <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="absolute top-[3px] left-1/2 -translate-x-1/2 w-11 h-11 flex items-start justify-center pt-1 text-xl font-bold text-[#202020] active:text-[#000080]">▲</button>
-            <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="absolute left-[3px] top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-start pl-1 text-xl font-bold text-[#202020] active:text-[#000080]">◀</button>
-            <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="absolute right-[3px] top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-end pr-1 text-xl font-bold text-[#202020] active:text-[#000080]">▶</button>
-            <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-11 h-11 flex items-end justify-center pb-1 text-xl font-bold text-[#202020] active:text-[#000080]">▼</button>
-            <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-[#808080] bg-[#a8a8a8] shadow-inner pointer-events-none ${isCharacterWalking ? 'bg-[#000080]' : ''}`}></div>
-          </div>
-        )}
       </div>
+
+      {myCharacterId && !isRunGameOpen && !isRoofGameOpen && (
+        <div
+          className="mobile-character-dpad fixed left-4 z-[8000] w-[108px] h-[108px] select-none drop-shadow-[0_5px_5px_rgba(0,0,0,0.48)]"
+          style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)' }}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label="캐릭터 이동 방향 패드"
+        >
+          <svg viewBox="0 0 120 120" className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
+            <defs>
+              <radialGradient id="dpad-shell" cx="35%" cy="25%" r="80%">
+                <stop offset="0%" stopColor="#f5f5f5" />
+                <stop offset="55%" stopColor="#c8c8c8" />
+                <stop offset="100%" stopColor="#8a8a8a" />
+              </radialGradient>
+              <linearGradient id="dpad-cross" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#555b63" />
+                <stop offset="48%" stopColor="#252a30" />
+                <stop offset="100%" stopColor="#090b0e" />
+              </linearGradient>
+            </defs>
+            <circle cx="60" cy="60" r="57" fill="url(#dpad-shell)" stroke="#242424" strokeWidth="4" />
+            <circle cx="60" cy="60" r="50" fill="none" stroke="#ffffff" strokeOpacity="0.72" strokeWidth="2" />
+            <path d="M47 16 Q47 11 52 11 H68 Q73 11 73 16 V47 H104 Q109 47 109 52 V68 Q109 73 104 73 H73 V104 Q73 109 68 109 H52 Q47 109 47 104 V73 H16 Q11 73 11 68 V52 Q11 47 16 47 H47 Z" fill="url(#dpad-cross)" stroke="#080808" strokeWidth="2.5" strokeLinejoin="round" />
+            <path d="M60 22 L51 34 H69 Z" fill="#e9e9e9" />
+            <path d="M60 98 L51 86 H69 Z" fill="#e9e9e9" />
+            <path d="M22 60 L34 51 V69 Z" fill="#e9e9e9" />
+            <path d="M98 60 L86 51 V69 Z" fill="#e9e9e9" />
+            <circle cx="60" cy="60" r="14" fill={isCharacterWalking ? '#000080' : '#171a1f'} stroke="#737980" strokeWidth="2" />
+            <circle cx="56" cy="56" r="6" fill="#ffffff" fillOpacity="0.08" />
+          </svg>
+          <button type="button" aria-label="위로 이동" {...mobileDirectionButtonProps('up')} className="absolute top-0 left-[32px] w-11 h-[48px] appearance-none border-0 bg-transparent p-0 outline-none"></button>
+          <button type="button" aria-label="왼쪽으로 이동" {...mobileDirectionButtonProps('left')} className="absolute left-0 top-[32px] w-[48px] h-11 appearance-none border-0 bg-transparent p-0 outline-none"></button>
+          <button type="button" aria-label="오른쪽으로 이동" {...mobileDirectionButtonProps('right')} className="absolute right-0 top-[32px] w-[48px] h-11 appearance-none border-0 bg-transparent p-0 outline-none"></button>
+          <button type="button" aria-label="아래로 이동" {...mobileDirectionButtonProps('down')} className="absolute bottom-0 left-[32px] w-11 h-[48px] appearance-none border-0 bg-transparent p-0 outline-none"></button>
+        </div>
+      )}
       
       <div className="bg-[#c0c0c0] px-2 py-0.5 border-t border-[var(--win-border-white)] flex justify-between text-[11px] text-gray-700">
         <span>현재 좌표: X={Math.round(-transform.x)}, Y={Math.round(-transform.y)}</span>
