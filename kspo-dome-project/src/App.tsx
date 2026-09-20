@@ -213,8 +213,7 @@ const globalStyles = `
 `;
 
 const MAX_CAPACITY = 15000;
-// 표시 인원은 Firestore에 실제 저장된 캐릭터 수만 사용합니다.
-const INITIAL_FILL = 0;
+const INITIAL_FILL = 10240;
 const MAX_SHARED_CHARACTERS = 500;
 
 const DEFAULT_STAGE_IMG = encodeURI("image_057089.jpg");
@@ -328,8 +327,55 @@ const getBadgeName = (jumps) => {
   return "🌱 비기너";
 };
 
-// 행사 전 화면을 채우던 예시 캐릭터는 더 이상 생성하지 않습니다.
-const PRESET_CHARACTERS = [];
+const generatePresets = (count) => {
+  const names = ['에바뛰', '월요일', '직장인', '락덕', '씨엔블루', '학생', '안녕하세요', '러너'];
+  const emojis = ['🐹', '👦', '🖤', '👿', '💻', '🎸', '🥁', '🎨', '🔥', '👻', '😎', '😜', '😍', '🎉', '🌟'];
+
+  // 같은 순번으로 X/Y를 계산하면 대각선 띠가 생기므로, 월드를 작은 구역으로
+  // 나눈 뒤 각 구역 안에서 서로 다른 고정 난수로 위치를 흩뿌립니다.
+  const columns = 15;
+  const rows = Math.ceil(count / columns);
+  const seededUnit = (seed) => {
+    const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+    return value - Math.floor(value);
+  };
+  
+  return Array.from({ length: count }).map((_, i) => {
+    const scatteredIndex = (i * 73) % count;
+    const column = scatteredIndex % columns;
+    const row = Math.floor(scatteredIndex / columns);
+    const cellWidth = 2860 / columns;
+    const cellHeight = 2860 / rows;
+    const tierSlot = i % 10;
+    const jumpSeed = seededUnit(i * 109 + 67);
+    const presetJumps = tierSlot < 3
+      ? 30 + Math.floor(jumpSeed * 970)          // 30%: 비기너 (30~999회)
+      : tierSlot < 6
+        ? 1000 + Math.floor(jumpSeed * 4000)     // 30%: 초보 (1,000~4,999회)
+        : tierSlot < 9
+          ? 5000 + Math.floor(jumpSeed * 5000)   // 30%: 중수 (5,000~9,999회)
+          : 10000 + Math.floor(jumpSeed * 30000); // 10%: 고수 (10,000~39,999회)
+
+    return {
+      id: 'preset-' + i,
+      name: names[Math.floor(seededUnit(i * 83 + 19) * names.length)] + '_' + i.toString().padStart(3, '0'),
+      emoji: emojis[Math.floor(seededUnit(i * 97 + 43) * emojis.length)],
+      imageUrl: null,
+      hasItem: i % 2 === 0,
+      x: 70 + (column + 0.15 + seededUnit(i * 2 + 1) * 0.7) * cellWidth,
+      y: 70 + (row + 0.15 + seededUnit(i * 2 + 2) * 0.7) * cellHeight,
+      delay: -((i % 20) / 10),
+      duration: 1.0 + ((i % 5) / 10),
+      motionType: i % 2,
+      jumpsCount: presetJumps,
+      isUser: false,
+      runBest: (i * 17) % 80,
+      roofBest: (i * 29) % 400
+    };
+  });
+};
+
+const PRESET_CHARACTERS = generatePresets(150);
 
 function RetroModal({ isOpen, title, message, onConfirm, onCancel, showCancel = true }) {
   if (!isOpen) return null;
@@ -1540,25 +1586,12 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || !firebaseAuth.currentUser) return;
-
-    let cancelled = false;
-    const refreshCharacterCount = () => {
-      getCountFromServer(collection(firebaseDb, 'characters'))
-        .then(result => {
-          if (cancelled) return;
-          const actualCount = result.data().count;
-          setSharedCharacterCount(actualCount);
-          setCurrentCapacity(actualCount);
-        })
-        .catch(error => console.error('Character count read failed:', error));
-    };
-
-    refreshCharacterCount();
-    const timer = window.setInterval(refreshCharacterCount, 60000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    getCountFromServer(collection(firebaseDb, 'characters'))
+      .then(result => {
+        setSharedCharacterCount(result.data().count);
+        setCurrentCapacity(INITIAL_FILL + result.data().count);
+      })
+      .catch(() => {});
   }, [authReady]);
 
   // 현재 화면에 보이는 실제 사용자 캐릭터의 작은 채팅 문서만 구독합니다.
