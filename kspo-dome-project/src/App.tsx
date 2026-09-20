@@ -2156,12 +2156,12 @@ function Step1Create({
           <label className="text-xs sm:text-sm font-bold">미리보기 (Preview)</label>
           <div className="win95-panel w-full h-28 sm:h-auto sm:aspect-square bg-white flex items-end justify-center pb-4 sm:pb-8 relative overflow-hidden">
             <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none"></div>
-            <div className={`flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24 z-10 ${isTestJumping ? 'jump-once-' + motionType : ''}`}>
+            <div className={`flex items-center justify-center w-24 h-24 z-10 ${isTestJumping ? 'jump-once-' + motionType : ''}`}>
               <div className="relative inline-flex items-center justify-center pointer-events-none">
                 {characterImage ? (
-                  <img src={characterImage} alt="preview" className="max-w-[80px] max-h-[80px] sm:max-w-[96px] sm:max-h-[96px] object-contain pixelated" />
+                  <img src={characterImage} alt="preview" className="max-w-[96px] max-h-[96px] object-contain pixelated" />
                 ) : (
-                  <span className="text-5xl sm:text-6xl" style={{ textShadow: '2px 2px 0 #fff' }}>{characterEmoji}</span>
+                  <span className="text-6xl" style={{ textShadow: '2px 2px 0 #fff' }}>{characterEmoji}</span>
                 )}
                 {hasItem && (
                   <div className="absolute top-0 right-0 w-full h-full pointer-events-none">
