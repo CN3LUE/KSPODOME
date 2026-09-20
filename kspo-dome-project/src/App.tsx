@@ -590,12 +590,13 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         lastSpawn = frame;
         const spawnPit = clearedObstacles >= 4 && Math.random() < (.13 + difficulty * .11);
         if (spawnPit) {
-          // 대형 구덩이는 현재 속도의 1단 점프 체공거리보다 확실히 길고,
-          // 타이밍을 맞춘 2단 점프로만 통과할 수 있는 폭으로 계산합니다.
-          const isDoubleJumpPit = clearedObstacles >= 8 && Math.random() < .55;
+          // 대형 구덩이는 1단 점프로는 부족하지만 정상적인 2단 점프로는
+          // 반드시 건널 수 있도록 중속 구간에서만 생성합니다.
+          const isDoubleJumpPit = clearedObstacles >= 8 && speed <= 12 && Math.random() < .45;
           const pitWidth = isDoubleJumpPit
-            // 1단 점프는 약 40프레임이므로 56~60프레임 이동 거리로 생성합니다.
-            ? Math.max(440, speed * (56 + Math.random() * 4) + PLAYER_SIZE)
+            // 약 49~52프레임 이동 거리: 1단(약 40프레임)보다 길고,
+            // 적절한 2단 점프(약 58~70프레임)보다 충분히 짧습니다.
+            ? Math.min(650, Math.max(380, speed * (48 + Math.random() * 3) + PLAYER_SIZE))
             : 92 + Math.random() * 48;
           pits.push({ x: GAME_WIDTH + 30, w: pitWidth, isDoubleJumpPit });
           // 긴 구덩이 위나 착지 직후에 다른 장애물이 겹치지 않도록 안전 구간을 둡니다.
