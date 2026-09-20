@@ -32,6 +32,16 @@ const globalStyles = `
     }
   }
 
+  /* Tailwind 화면 폭 판정과 관계없이 실제 터치 기기에서 이동 패드를 표시합니다. */
+  .mobile-character-dpad {
+    display: none;
+  }
+  @media (max-width: 767px), (hover: none) and (pointer: coarse) {
+    .mobile-character-dpad {
+      display: block !important;
+    }
+  }
+
   .win95-window {
     background: var(--win-bg);
     border-top: 2px solid var(--win-border-white);
@@ -2653,10 +2663,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
           })}
         </div>
 
-        {hasMyCharacter && !isRunGameOpen && !isRoofGameOpen && (
+        {myCharacterId && !isRunGameOpen && !isRoofGameOpen && (
           <div
-            className="sm:hidden absolute left-3 z-[200] w-[106px] h-[106px] rounded-full select-none border-2 border-[#707070] bg-[#c0c0c0]/90 shadow-[2px_2px_0_rgba(0,0,0,0.45)]"
-            style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
+            className="mobile-character-dpad absolute left-3 z-[500] w-[106px] h-[106px] rounded-full select-none border-2 border-[#303030] bg-[#c0c0c0] shadow-[3px_3px_0_rgba(0,0,0,0.6)]"
+            style={{ touchAction: 'none', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 38px)' }}
             onPointerDown={(event) => event.stopPropagation()}
             aria-label="캐릭터 이동 방향 패드"
           >
