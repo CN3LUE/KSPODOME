@@ -2263,14 +2263,37 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
   const [isCharacterWalking, setIsCharacterWalking] = useState(false);
   const [joystickOffset, setJoystickOffset] = useState({ x: 0, y: 0 });
 
-  const [clickCounts, setClickCounts] = useState({});
   const [feverStates, setFeverStates] = useState({});
+  const feverClickRef = useRef(new Map<string, { count: number; lastAt: number }>());
   const [isRunGameOpen, setIsRunGameOpen] = useState(false);
   const [isRoofGameOpen, setIsRoofGameOpen] = useState(false);
   const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatCooldownUntil, setChatCooldownUntil] = useState(0);
+
+  const registerFeverClick = useCallback((characterId: string) => {
+    const now = Date.now();
+    const previous = feverClickRef.current.get(characterId);
+    const count = previous && now - previous.lastAt <= 1200 ? previous.count + 1 : 1;
+
+    if (count >= 10) {
+      const feverUntil = now + 5000;
+      feverClickRef.current.set(characterId, { count: 0, lastAt: now });
+      setFeverStates(previousStates => ({ ...previousStates, [characterId]: feverUntil }));
+      window.setTimeout(() => {
+        setFeverStates(previousStates => {
+          if (Number(previousStates[characterId] || 0) > Date.now()) return previousStates;
+          const nextStates = { ...previousStates };
+          delete nextStates[characterId];
+          return nextStates;
+        });
+      }, 5050);
+      return;
+    }
+
+    feverClickRef.current.set(characterId, { count, lastAt: now });
+  }, []);
 
   const handleChatSubmit = async (event) => {
     event.preventDefault();
@@ -2725,25 +2748,7 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                   if (isResting) return; // 휴식 중이면 클릭 무시
 
                   onAddJumps(char.id, 1, true);
-
-                  if (!isFever) {
-                    setClickCounts(prev => {
-                      const now = Date.now();
-                      const previousHistory = prev[char.id] || [];
-                      const lastClickAt = previousHistory[previousHistory.length - 1] || 0;
-                      // 전체 횟수를 2초 안에 채울 필요 없이, 클릭 사이가 1.2초 이상
-                      // 끊기지 않는 연속 클릭이면 계속 누적합니다.
-                      const history = now - lastClickAt <= 1200
-                        ? [...previousHistory, now]
-                        : [now];
-                      if (history.length >= 10) {
-                        setFeverStates(fs => ({ ...fs, [char.id]: now + 5000 }));
-                        setTimeout(() => { setFeverStates(fs => { const n = {...fs}; if(n[char.id]<=Date.now()) delete n[char.id]; return n; }); }, 5000);
-                        return { ...prev, [char.id]: [] };
-                      }
-                      return { ...prev, [char.id]: history };
-                    });
-                  }
+                  if (!isFever) registerFeverClick(char.id);
                 }}
               >
                 {showChat && (
@@ -2805,7 +2810,10 @@ function Step2GlobalSquare({ characters, myCharacterId, isAdmin, onGoHome, onUpd
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!isResting) onAddJumps(char.id, 1, true);
+                          if (!isResting) {
+                            onAddJumps(char.id, 1, true);
+                            if (!isFever) registerFeverClick(char.id);
+                          }
                         }} 
                         disabled={isResting}
                         className={`win95-button text-[10px] py-0 px-2 ${isResting ? 'opacity-50 cursor-not-allowed' : ''}`}>
