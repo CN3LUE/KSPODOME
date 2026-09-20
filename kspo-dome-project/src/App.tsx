@@ -1173,6 +1173,7 @@ export default function App() {
   const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null, showCancel: false });
   const positionSaveTimersRef = useRef(new Map());
   const positionOverridesRef = useRef(new Map());
+  const bestScoreOverridesRef = useRef(new Map());
   const presetPositionsRef = useRef({});
   const progressMigrationRef = useRef(new Set());
   const worldCharactersRef = useRef([]);
@@ -1388,7 +1389,23 @@ export default function App() {
 
     const unsubscribe = onSnapshot(nearbyQuery, (snapshot) => {
       const sharedCharacters = snapshot.docs.map(characterDoc => {
-        const serverCharacter = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
+        let serverCharacter = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
+        const pendingBest = bestScoreOverridesRef.current.get(characterDoc.id);
+        if (pendingBest) {
+          const serverRunBest = Number((serverCharacter as any).runBest || 0);
+          const serverRoofBest = Number((serverCharacter as any).roofBest || 0);
+          const runConfirmed = !Number.isFinite(pendingBest.runBest) || serverRunBest >= pendingBest.runBest;
+          const roofConfirmed = !Number.isFinite(pendingBest.roofBest) || serverRoofBest >= pendingBest.roofBest;
+          if (runConfirmed && roofConfirmed) {
+            bestScoreOverridesRef.current.delete(characterDoc.id);
+          } else {
+            serverCharacter = {
+              ...serverCharacter,
+              runBest: Math.max(serverRunBest, Number(pendingBest.runBest || 0)),
+              roofBest: Math.max(serverRoofBest, Number(pendingBest.roofBest || 0))
+            };
+          }
+        }
         const localPosition = positionOverridesRef.current.get(characterDoc.id);
         if (!localPosition) return serverCharacter;
         if (((serverCharacter as any).updatedAtMs || 0) >= localPosition.updatedAtMs) {
@@ -1413,6 +1430,8 @@ export default function App() {
             return {
               ...serverCharacter,
               jumpsCount: Math.max(Number(localCharacter.jumpsCount || 0), serverCalculatedJumps),
+              runBest: Math.max(Number(localCharacter.runBest || 0), Number((serverCharacter as any).runBest || 0)),
+              roofBest: Math.max(Number(localCharacter.roofBest || 0), Number((serverCharacter as any).roofBest || 0)),
               restUntil: localCharacter.restUntil,
               lastRestBoundary: localCharacter.lastRestBoundary,
               passiveBaseJumps: Number.isFinite((serverCharacter as any).passiveBaseJumps)
@@ -1740,24 +1759,35 @@ export default function App() {
     setChatMessages(previous => ({ ...previous, [user.uid]: message }));
   }, [myCharacterId]);
 
-  const handleUpdateBestScore = useCallback((id, gameType, score) => {
-    let bestScoreChanged = false;
-    setWorldCharacters(prev => prev.map(c => {
-      if (c.id === id) {
-        const currentBest = c[`${gameType}Best`] || 0;
-        if (score > currentBest) {
-          bestScoreChanged = true;
-          return { ...c, [`${gameType}Best`]: score };
-        }
-      }
-      return c;
-    }));
+  const handleUpdateBestScore = useCallback((id, gameType, rawScore) => {
+    const score = Math.max(0, Math.floor(Number(rawScore) || 0));
+    const field = `${gameType}Best`;
+    const currentCharacter = worldCharactersRef.current.find(character => character.id === id);
+    const currentBest = Number(currentCharacter?.[field] || 0);
+    if (score <= currentBest) return;
+
+    const previousOverride = bestScoreOverridesRef.current.get(id) || {};
+    bestScoreOverridesRef.current.set(id, {
+      ...previousOverride,
+      [field]: Math.max(Number(previousOverride[field] || 0), score)
+    });
+    setWorldCharacters(previous => previous.map(character =>
+      character.id === id
+        ? { ...character, [field]: Math.max(Number(character[field] || 0), score) }
+        : character
+    ));
+
     if (!id.startsWith('preset-')) {
-      window.setTimeout(() => {
-        if (bestScoreChanged) updateDoc(doc(firebaseDb, 'characters', id), { [`${gameType}Best`]: score, updatedAtMs: Date.now() }).catch(() => {});
-      }, 0);
+      setDoc(
+        doc(firebaseDb, 'characters', id),
+        { [field]: score, updatedAtMs: Date.now() },
+        { merge: true }
+      ).catch(error => {
+        console.error('Best score save failed:', error);
+        showModal('기록 저장 실패', '게임 최고 기록을 저장하지 못했습니다. Firestore characters 수정 권한을 확인해 주세요.', null, false);
+      });
     }
-  }, []);
+  }, [showModal]);
 
   const handleResetWorld = useCallback(async () => {
     if (!isAdmin) return;
