@@ -1586,12 +1586,45 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || !firebaseAuth.currentUser) return;
-    getCountFromServer(collection(firebaseDb, 'characters'))
-      .then(result => {
-        setSharedCharacterCount(result.data().count);
-        setCurrentCapacity(INITIAL_FILL + result.data().count);
-      })
-      .catch(() => {});
+
+    let cancelled = false;
+
+    const applyCharacterCount = (count: number) => {
+      if (cancelled) return;
+      setSharedCharacterCount(count);
+      setCurrentCapacity(INITIAL_FILL + count);
+    };
+
+    const refreshCharacterCount = async () => {
+      try {
+        const result = await getCountFromServer(collection(firebaseDb, 'characters'));
+        applyCharacterCount(result.data().count);
+      } catch {
+        try {
+          const result = await getDocs(query(
+            collection(firebaseDb, 'characters'),
+            limit(MAX_SHARED_CHARACTERS)
+          ));
+          applyCharacterCount(result.size);
+        } catch {
+          // 마지막으로 정상 집계된 인원은 그대로 유지합니다.
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) void refreshCharacterCount();
+    };
+
+    void refreshCharacterCount();
+    const refreshTimer = window.setInterval(refreshCharacterCount, 60_000);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [authReady]);
 
   // 현재 화면에 보이는 실제 사용자 캐릭터의 작은 채팅 문서만 구독합니다.
