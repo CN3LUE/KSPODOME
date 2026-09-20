@@ -154,6 +154,19 @@ const globalStyles = `
     z-index: 100;
   }
 
+  /* 모바일 게임 연타를 Safari의 글자 선택·이미지 드래그·길게 누르기로 인식하지 않게 합니다. */
+  .game-interaction-surface,
+  .game-interaction-surface * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+  .game-interaction-surface canvas,
+  .game-interaction-surface img {
+    -webkit-user-drag: none !important;
+    user-drag: none !important;
+  }
+
   .bg-grid {
     background-image: 
       linear-gradient(#d3d3d3 1px, transparent 1px),
@@ -759,7 +772,12 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
+    <div
+      className="game-interaction-surface fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onSelectStart={(event) => event.preventDefault()}
+    >
       <div className="win95-window w-full max-w-[720px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
           <div className="flex items-center gap-1.5"><span>🏃 무한_달리기.exe</span></div>
@@ -768,7 +786,8 @@ function MiniGameRun({ isOpen, onClose, myCharacter, onAddJumps, onUpdateBestSco
         <div className="bg-[#c0c0c0] p-2 flex flex-col items-center">
           <div className="win95-input p-0 bg-[#090f2e] relative w-full overflow-hidden border-2 border-[#7474a4]">
             <canvas ref={canvasRef} width={GAME_WIDTH} height={GAME_HEIGHT} className="w-full h-auto cursor-pointer block" style={{ imageRendering: 'pixelated', touchAction: 'none' }}
-              onPointerDown={() => {
+              onPointerDown={(event) => {
+                event.preventDefault();
                 if (gameState === 'PLAYING') window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
                 else start();
               }}
@@ -1078,7 +1097,12 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4">
+    <div
+      className="game-interaction-surface fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center p-4"
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
+      onSelectStart={(event) => event.preventDefault()}
+    >
       <div className="win95-window w-full max-w-[420px] shadow-[4px_4px_0_rgba(0,0,0,0.5)]">
         <div className="win95-titlebar">
           <div className="flex items-center gap-1.5"><span>☁️ 천국의_계단.exe</span></div>
@@ -1091,12 +1115,20 @@ function MiniGameRoofBreaker({ isOpen, onClose, myCharacter, onAddJumps, onUpdat
               className="w-full h-auto cursor-crosshair block" 
               style={{ imageRendering: 'pixelated', touchAction: 'none' }}
               onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
                 if (gameState !== 'PLAYING') { start(); return; }
                 const rect = e.currentTarget.getBoundingClientRect();
                 const isLeft = e.clientX - rect.left < rect.width / 2;
                 window.dispatchEvent(new KeyboardEvent("keydown", { code: isLeft ? "ArrowLeft" : "ArrowRight" }));
               }}
-              onPointerUp={() => {
+              onPointerUp={(e) => {
+                e.preventDefault();
+                if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowLeft" }));
+                window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowRight" }));
+              }}
+              onPointerCancel={() => {
                 window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowLeft" }));
                 window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowRight" }));
               }}
