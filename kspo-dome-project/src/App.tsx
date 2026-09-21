@@ -1239,6 +1239,9 @@ export default function App() {
   const [sysFanImg, setSysFanImg] = useState(DEFAULT_FAN_IMG);
   const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null, showCancel: false });
   const positionSaveTimersRef = useRef(new Map());
+  const jumpSaveTimersRef = useRef(new Map());
+  const pendingJumpSavesRef = useRef(new Map());
+  const chatDeleteTimerRef = useRef(null);
   const positionOverridesRef = useRef(new Map());
   const bestScoreOverridesRef = useRef(new Map());
   const presetPositionsRef = useRef({});
@@ -1595,7 +1598,11 @@ export default function App() {
         const existingIndex = previousCharacters.findIndex(character => character.id === myCharacterId);
         if (existingIndex < 0) return [...previousCharacters, myServerCharacter];
         return previousCharacters.map(character =>
-          character.id === myCharacterId ? { ...character, ...myServerCharacter } : character
+          character.id === myCharacterId
+            ? Number(character.updatedAtMs || 0) > Number((myServerCharacter as any).updatedAtMs || 0)
+              ? character
+              : { ...character, ...myServerCharacter }
+            : character
         );
       });
     }, error => console.error('Firestore own character read failed:', error));
@@ -1634,7 +1641,7 @@ export default function App() {
     };
 
     void refreshCharacterCount();
-    const refreshTimer = window.setInterval(refreshCharacterCount, 60_000);
+    const refreshTimer = window.setInterval(refreshCharacterCount, 600_000);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
@@ -1656,20 +1663,19 @@ export default function App() {
       Object.entries(previous).filter(([ownerUid]) => ownerUids.includes(ownerUid))
     ));
 
-    const unsubscribes = ownerUids.map(ownerUid => onSnapshot(
-      doc(firebaseDb, 'messages', ownerUid),
-      messageDoc => {
-        setChatMessages(previous => {
-          const next = { ...previous };
-          if (messageDoc.exists()) next[ownerUid] = messageDoc.data();
-          else delete next[ownerUid];
-          return next;
-        });
-      },
-      error => console.error('Firestore chat read failed:', error)
-    ));
+    const messageQuery = query(
+      collection(firebaseDb, 'messages'),
+      where('ownerUid', 'in', ownerUids.slice(0, 30))
+    );
 
-    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+    return onSnapshot(messageQuery, snapshot => {
+      const nextMessages = {};
+      snapshot.docs.forEach(messageDoc => {
+        const message = messageDoc.data();
+        if (Number(message.expiresAtMs || 0) > Date.now()) nextMessages[message.ownerUid] = message;
+      });
+      setChatMessages(nextMessages);
+    }, error => console.error('Firestore chat read failed:', error));
   }, [authReady, chatOwnerKey]);
 
   const handleViewportChange = useCallback((x, y) => {
@@ -1908,12 +1914,46 @@ export default function App() {
     ));
 
     if (!id.startsWith('preset-')) {
-      setDoc(doc(firebaseDb, 'characters', id), savedChanges, { merge: true }).catch(error => {
-        console.error('Jump reward save failed:', error);
-        showModal('에바뛰 저장 실패', '획득한 에바뛰를 저장하지 못했습니다. Firestore characters 수정 권한을 확인해 주세요.', null, false);
-      });
+      // 연속 클릭과 게임 보상을 매번 쓰지 않고 1분 동안 하나로 묶어 저장합니다.
+      pendingJumpSavesRef.current.set(id, savedChanges);
+      const previousTimer = jumpSaveTimersRef.current.get(id);
+      if (previousTimer) window.clearTimeout(previousTimer);
+      const timer = window.setTimeout(() => {
+        const pendingChanges = pendingJumpSavesRef.current.get(id);
+        jumpSaveTimersRef.current.delete(id);
+        pendingJumpSavesRef.current.delete(id);
+        if (!pendingChanges) return;
+        setDoc(doc(firebaseDb, 'characters', id), pendingChanges, { merge: true }).catch(error => {
+          console.error('Jump reward save failed:', error);
+          pendingJumpSavesRef.current.set(id, pendingChanges);
+        });
+      }, 60_000);
+      jumpSaveTimersRef.current.set(id, timer);
     }
-  }, [showModal]);
+  }, []);
+
+  // 앱을 벗어날 때 아직 대기 중인 횟수가 있으면 한 번만 저장합니다.
+  useEffect(() => {
+    const flushPendingJumps = () => {
+      pendingJumpSavesRef.current.forEach((pendingChanges, id) => {
+        const timer = jumpSaveTimersRef.current.get(id);
+        if (timer) window.clearTimeout(timer);
+        setDoc(doc(firebaseDb, 'characters', id), pendingChanges, { merge: true }).catch(error => {
+          console.error('Pending jump save failed:', error);
+        });
+      });
+      jumpSaveTimersRef.current.clear();
+      pendingJumpSavesRef.current.clear();
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) flushPendingJumps();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushPendingJumps();
+    };
+  }, []);
 
   const handleSendChat = useCallback(async (rawText) => {
     const user = firebaseAuth.currentUser;
@@ -1933,6 +1973,13 @@ export default function App() {
 
     await setDoc(doc(firebaseDb, 'messages', user.uid), message);
     setChatMessages(previous => ({ ...previous, [user.uid]: message }));
+    if (chatDeleteTimerRef.current) window.clearTimeout(chatDeleteTimerRef.current);
+    chatDeleteTimerRef.current = window.setTimeout(() => {
+      deleteDoc(doc(firebaseDb, 'messages', user.uid)).catch(error => {
+        console.error('Expired chat delete failed:', error);
+      });
+      chatDeleteTimerRef.current = null;
+    }, 5500);
   }, [myCharacterId]);
 
   const handleUpdateBestScore = useCallback((id, gameType, rawScore) => {
