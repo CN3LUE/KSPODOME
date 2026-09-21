@@ -1584,6 +1584,23 @@ export default function App() {
     return unsubscribe;
   }, [authReady, showModal, viewportCell.x, viewportCell.y, myCharacterId]);
 
+  // 주변 40명 제한에 포함되지 않더라도 내 캐릭터는 항상 따로 불러옵니다.
+  useEffect(() => {
+    if (!authReady || !firebaseAuth.currentUser || !myCharacterId || myCharacterId.startsWith('preset-')) return;
+
+    return onSnapshot(doc(firebaseDb, 'characters', myCharacterId), characterDoc => {
+      if (!characterDoc.exists()) return;
+      const myServerCharacter = { ...characterDoc.data(), id: characterDoc.id, isUser: true };
+      setWorldCharacters(previousCharacters => {
+        const existingIndex = previousCharacters.findIndex(character => character.id === myCharacterId);
+        if (existingIndex < 0) return [...previousCharacters, myServerCharacter];
+        return previousCharacters.map(character =>
+          character.id === myCharacterId ? { ...character, ...myServerCharacter } : character
+        );
+      });
+    }, error => console.error('Firestore own character read failed:', error));
+  }, [authReady, myCharacterId]);
+
   useEffect(() => {
     if (!authReady || !firebaseAuth.currentUser) return;
 
@@ -1774,6 +1791,11 @@ export default function App() {
       delete charWithCoords.isUser;
 
       await setDoc(doc(firebaseDb, 'characters', newChar.id), charWithCoords);
+      // 주변 조회가 이미 40명으로 찬 경우에도 방금 만든 캐릭터를 즉시 화면에 표시합니다.
+      setWorldCharacters(previousCharacters => [
+        ...previousCharacters.filter(character => character.id !== newChar.id),
+        { ...charWithCoords, id: newChar.id, isUser: true }
+      ]);
       setCurrentCapacity(prev => prev + 1);
       setSharedCharacterCount(prev => prev + 1);
       setMyCharacterId(newChar.id);
